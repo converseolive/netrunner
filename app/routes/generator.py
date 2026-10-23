@@ -6,6 +6,7 @@ import threading
 from flask import Blueprint, request, jsonify
 from app.core.engine import active_task_status, register_run
 from app.core.generators import protocol, adversary
+from app.core import campaign
 
 bp = Blueprint('generator', __name__)
 
@@ -106,6 +107,50 @@ def generate_adversary():
         )
         thread.start()
         return jsonify({'status': f'{sim_type} simulation started.'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/generate/campaign', methods=['POST'])
+def generate_campaign():
+    """Run the full adversary suite (or a subset) sequentially."""
+    if active_task_status['is_running']:
+        return jsonify({'error': 'A task is already running.'}), 400
+
+    try:
+        data = request.get_json() or {}
+        settings = {
+            'interface': data.get('interface', 'eth0'),
+            'src_ip': data.get('src_ip', '10.0.0.100'),
+            'dst_ip': data.get('dst_ip', '10.0.0.1'),
+            'c2_host': data.get('c2_host', '185.100.87.42'),
+            'src_mac': data.get('src_mac'),
+            'dst_mac': data.get('dst_mac', 'ff:ff:ff:ff:ff:ff'),
+            'count': int(data.get('count', 30)),
+            'delay': float(data.get('delay', 0.1)),
+            'domain': data.get('domain', 'evil-c2.xyz'),
+        }
+        scenarios = data.get('scenarios')
+        planned = len(campaign.campaign_plan(settings, scenarios))
+
+        # Reset state
+        active_task_status['is_running'] = True
+        active_task_status['task_type'] = 'generate'
+        active_task_status['progress'] = 0
+        active_task_status['total'] = 0
+        active_task_status['loop_count'] = 0
+        active_task_status['message'] = f'Starting adversary campaign ({planned} scenarios)...'
+        active_task_status['error'] = None
+        active_task_status['logs'].clear()
+
+        thread = threading.Thread(
+            target=campaign.run_campaign,
+            args=(settings, scenarios),
+            daemon=True
+        )
+        thread.start()
+        return jsonify({'status': 'Adversary campaign started.', 'scenarios': planned})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -18,8 +18,12 @@ from scapy.all import (
 from app.core.engine import active_task_status, log_message
 
 
-def generate(params):
-    """Dispatch to the appropriate adversary simulation."""
+def run_one(params):
+    """
+    Run a single adversary simulation to completion. Does NOT touch the
+    is_running lifecycle flag, so a campaign can chain several in one task.
+    Raises on an unknown simulation or a simulation error.
+    """
     sim = params.get('simulation', 'c2_beacon').lower()
     simulations = {
         'c2_beacon': _sim_c2_beacon,
@@ -35,16 +39,18 @@ def generate(params):
         'kerberoast': _sim_kerberoast,
         'ntlm_relay': _sim_ntlm_relay,
     }
-
     sim_func = simulations.get(sim)
     if not sim_func:
-        log_message(f"[!] Unknown simulation: {sim}")
-        active_task_status['is_running'] = False
-        return
+        raise ValueError(f"Unknown simulation: {sim}")
+    log_message(f"[*] Starting adversary simulation: {sim}")
+    sim_func(params)
 
+
+def generate(params):
+    """Dispatch a single adversary simulation and own the task lifecycle."""
+    sim = params.get('simulation', 'c2_beacon').lower()
     try:
-        log_message(f"[*] Starting adversary simulation: {sim}")
-        sim_func(params)
+        run_one(params)
     except Exception as e:
         log_message(f"[!!!] Simulation error: {e}")
         active_task_status['error'] = str(e)

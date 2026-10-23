@@ -383,6 +383,9 @@ select.form-input { font-family: var(--sans); }
 ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 999px; border: 2px solid var(--surface); }
 ::-webkit-scrollbar-track { background: transparent; }
 
+/* ── Campaign banner ───────────────────────────────────────────────────────── */
+.campaign-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-left: 3px solid var(--crit); }
+
 /* ── Detection loop ────────────────────────────────────────────────────────── */
 .muted { color: var(--text-dim); }
 .cov-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }

@@ -855,6 +855,31 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetch('/replay/stop', { method: 'POST' }); // Reuses same stop endpoint
     });
 
+    const campaignBtn = document.getElementById('campaignBtn');
+    if (campaignBtn) campaignBtn.addEventListener('click', async () => {
+        const srcIpEl = document.getElementById('genSrcIp');
+        const dstIpEl = document.getElementById('genDstIp');
+        const payload = {
+            src_ip: srcIpEl.value,
+            dst_ip: dstIpEl.value,
+            interface: document.getElementById('genInterface').value,
+            c2_host: document.getElementById('genC2Host').value,
+            src_mac: srcIpEl.dataset.mac || null,
+            dst_mac: dstIpEl.dataset.mac || null,
+        };
+        try {
+            const resp = await fetch('/generate/campaign', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (data.error) { alert(data.error); return; }
+            detectionsLoaded = false;  // force a refresh next time Detections opens
+            genStatus.classList.remove('hidden');
+            startGenSSE();
+        } catch (err) { alert(`Error: ${err.message}`); }
+    });
+
     function startGenSSE() {
         if (statusEventSource) statusEventSource.close();
         statusEventSource = new EventSource('/replay/status');
