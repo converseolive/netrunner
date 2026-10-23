@@ -1574,6 +1574,15 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = '/detections/report';
     });
 
+    const clearRunsBtn = document.getElementById('clearRunsBtn');
+    if (clearRunsBtn) clearRunsBtn.addEventListener('click', async () => {
+        if (!confirm('Clear all recorded runs? This cannot be undone.')) return;
+        try {
+            await fetch('/runs', { method: 'DELETE' });
+            loadDetections();
+        } catch (err) { alert(`Error: ${err.message}`); }
+    });
+
     loadSettings();
     loadProfiles();
     loadAddresses();

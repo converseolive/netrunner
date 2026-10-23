@@ -30,27 +30,12 @@ def log_message(msg):
 
 
 # ── Run registry ─────────────────────────────────────────────────────────────
-# Lightweight record of what traffic was generated/replayed, so the ExtraHop
-# detection loop can correlate detections back to a scenario by IP + time window.
-
-recent_runs = deque(maxlen=50)
-
-
-def register_run(info):
-    """Record the start of a run; returns its id. `info` carries scenario/IPs."""
-    rid = f"run-{int(time.time() * 1000)}-{len(recent_runs)}"
-    record = {'id': rid, 'start_ms': int(time.time() * 1000), 'end_ms': None}
-    record.update(info)
-    recent_runs.append(record)
-    return rid
-
-
-def finish_run(rid):
-    """Stamp a run's end time."""
-    for r in recent_runs:
-        if r['id'] == rid and r['end_ms'] is None:
-            r['end_ms'] = int(time.time() * 1000)
-            return
+# Records of what traffic was generated/replayed, so the ExtraHop detection loop
+# can correlate detections back to a scenario by IP + time window. Backed by the
+# JSON-persisted store in app.core.runs and re-exported here so existing imports
+# (from app.core.engine import register_run) keep working.
+from app.core.runs import (  # noqa: E402,F401
+    recent_runs, register_run, finish_run, clear_runs)
 
 
 # ── PCAP Replay ──────────────────────────────────────────────────────────────

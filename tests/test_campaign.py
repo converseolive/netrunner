@@ -1,10 +1,13 @@
 """Unit tests for app.core.campaign (orchestration; packet send is mocked out)."""
 
+import os
+import tempfile
 import unittest
 from unittest import mock
 
 from app.core import campaign
 from app.core import engine
+from app.core import runs
 
 
 class CampaignPlanTests(unittest.TestCase):
@@ -31,12 +34,22 @@ class CampaignPlanTests(unittest.TestCase):
 
 class RunCampaignTests(unittest.TestCase):
     def setUp(self):
+        # Isolate the persistent run store so tests never write into the repo.
+        self._orig_runs_file = runs.RUNS_FILE
+        fd, self._runs_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.remove(self._runs_path)
+        runs.RUNS_FILE = self._runs_path
         engine.recent_runs.clear()
         engine.active_task_status["is_running"] = True
         engine.active_task_status["error"] = None
 
     def tearDown(self):
         engine.active_task_status["is_running"] = False
+        runs.RUNS_FILE = self._orig_runs_file
+        engine.recent_runs.clear()
+        if os.path.exists(self._runs_path):
+            os.remove(self._runs_path)
 
     def test_registers_a_run_per_scenario_and_resets(self):
         with mock.patch("app.core.generators.adversary.run_one") as run_one:

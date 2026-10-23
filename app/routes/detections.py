@@ -11,7 +11,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, Response
 
 from app.core import extrahop, detection_match, report
-from app.core.engine import recent_runs
+from app.core.engine import recent_runs, clear_runs
 from app.core.settings import get_settings
 
 bp = Blueprint('detections', __name__)
@@ -63,6 +63,12 @@ def _run_validation():
 @bp.route('/runs', methods=['GET'])
 def list_runs():
     return jsonify({'runs': _checkable_runs()})
+
+
+@bp.route('/runs', methods=['DELETE'])
+def clear_run_history():
+    clear_runs()
+    return jsonify({'status': 'cleared'})
 
 
 @bp.route('/extrahop/test', methods=['POST'])
