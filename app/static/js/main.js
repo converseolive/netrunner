@@ -1583,6 +1583,28 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { alert(`Error: ${err.message}`); }
     });
 
+    // ───────── Interfaces ─────────
+    async function loadInterfaces() {
+        try {
+            const resp = await fetch('/interfaces');
+            const data = await resp.json();
+            const names = (data.interfaces || []).map(i => i.name);
+            const dl = document.getElementById('ifaceOptions');
+            if (dl) dl.innerHTML = names.map(n => `<option value="${escHtml(n)}">`).join('');
+            // Give the interface fields a sensible default for this host: prefer
+            // a wired NIC, then any non-loopback, then whatever is first.
+            if (names.length) {
+                const nic = names.find(n => /^(eth|en|ens|eno|enp)/.test(n))
+                    || names.find(n => !/^lo/.test(n)) || names[0];
+                ['genInterface', 'replayInterface'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && !names.includes(el.value)) el.value = nic;
+                });
+            }
+        } catch (err) { console.error('Failed to load interfaces:', err); }
+    }
+
+    loadInterfaces();
     loadSettings();
     loadProfiles();
     loadAddresses();

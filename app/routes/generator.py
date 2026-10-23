@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify
 from app.core.engine import active_task_status, register_run
 from app.core.generators import protocol, adversary
 from app.core import campaign
+from app.core.interfaces import validate_interface
 
 bp = Blueprint('generator', __name__)
 
@@ -21,6 +22,10 @@ def generate_protocol():
         data = request.get_json()
         proto = data.get('protocol', 'dns')
         interface = data.get('interface', 'eth0')
+
+        ok, err = validate_interface(interface)
+        if not ok:
+            return jsonify({'error': err}), 400
 
         # Reset state
         active_task_status['is_running'] = True
@@ -66,6 +71,10 @@ def generate_adversary():
         data = request.get_json()
         sim_type = data.get('simulation', 'c2_beacon')
         interface = data.get('interface', 'eth0')
+
+        ok, err = validate_interface(interface)
+        if not ok:
+            return jsonify({'error': err}), 400
 
         # Reset state
         active_task_status['is_running'] = True
@@ -122,6 +131,9 @@ def generate_campaign():
 
     try:
         data = request.get_json() or {}
+        ok, err = validate_interface(data.get('interface', 'eth0'))
+        if not ok:
+            return jsonify({'error': err}), 400
         settings = {
             'interface': data.get('interface', 'eth0'),
             'src_ip': data.get('src_ip', '10.0.0.100'),

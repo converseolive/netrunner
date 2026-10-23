@@ -6,6 +6,7 @@ import os
 import threading
 from flask import Blueprint, request, jsonify, current_app, Response
 from app.core.engine import replay_pcap_task, active_task_status, register_run
+from app.core.interfaces import validate_interface
 import json
 import time
 
@@ -26,6 +27,10 @@ def start_replay():
 
         if not os.path.exists(filepath):
             return jsonify({'error': 'PCAP file not found.'}), 400
+
+        ok, err = validate_interface(data.get('interface', 'eth0'))
+        if not ok:
+            return jsonify({'error': err}), 400
 
         ip_map = data.get('ip_map', {})
         params = {
