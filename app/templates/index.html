@@ -427,10 +427,12 @@
                         <h2 class="section-header">Adversary Simulations</h2>
                         <div class="card-grid">
                             <div class="gen-card adversary" data-type="adversary" data-sim="c2_beacon">
-                                <div class="gen-card-icon">🎯</div><h3>C2 Beaconing</h3><p>Periodic HTTPS callbacks</p>
+                                <div class="gen-card-icon">🎯</div><h3>C2 Beaconing</h3><p>Periodic HTTPS callbacks. Set a Duration for a sustained, jittered campaign.</p>
                                 <div class="gen-card-config">
-                                    <input type="number" placeholder="Count" value="50" class="form-input small" data-field="count">
-                                    <input type="number" placeholder="Interval (s)" value="5" step="0.5" class="form-input small" data-field="delay">
+                                    <input type="number" placeholder="Interval (s)" value="30" step="1" class="form-input small" data-field="delay">
+                                    <input type="number" placeholder="Duration (min)" value="10" step="1" class="form-input small" data-field="duration_min">
+                                    <input type="number" placeholder="Jitter %" value="15" step="5" class="form-input small" data-field="jitter">
+                                    <input type="number" placeholder="Burst count" value="50" class="form-input small" data-field="count">
                                 </div>
                                 <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
                             </div>

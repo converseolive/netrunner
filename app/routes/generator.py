@@ -88,6 +88,8 @@ def generate_adversary():
             'delay': float(data.get('delay', 1.0)),
             'domain': data.get('domain', 'evil-c2.xyz'),
             'duration': int(data.get('duration', 60)),
+            'duration_min': float(data.get('duration_min', 0) or 0),
+            'jitter': float(data.get('jitter', 0) or 0),
         }
 
         # Record the run so the ExtraHop detection loop can correlate it later.

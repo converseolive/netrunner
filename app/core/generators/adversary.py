@@ -233,104 +233,142 @@ def _build_tls_client_hello(hostname=''):
 
 # ── C2 Beaconing ─────────────────────────────────────────────────────────────
 
+def _c2_beacon_session(base, src_ip, c2_host):
+    """Craft one full HTTPS beacon: handshake, TLS, payload, teardown."""
+    packets = []
+    sport = random.randint(49152, 65535)
+
+    # TCP 3-way handshake
+    hs_pkts, client_seq, server_seq = _tcp_handshake(
+        base, src_ip, c2_host, sport, 443
+    )
+    packets.extend(hs_pkts)
+
+    # TLS ClientHello with SNI
+    tls_hello = _build_tls_client_hello(hostname=c2_host)
+    packets.append(
+        base / IP(src=src_ip, dst=c2_host) /
+        TCP(sport=sport, dport=443, flags='PA',
+            seq=client_seq, ack=server_seq) /
+        Raw(load=tls_hello)
+    )
+    client_seq += len(tls_hello)
+
+    # Server ACK
+    packets.append(
+        base / IP(src=c2_host, dst=src_ip) /
+        TCP(sport=443, dport=sport, flags='A',
+            seq=server_seq, ack=client_seq)
+    )
+
+    # Server TLS ServerHello + Certificate (simulated response)
+    server_hello = b'\x16\x03\x03' + struct.pack('!H', 74)
+    server_hello += b'\x02' + b'\x00\x00\x46'  # ServerHello handshake
+    server_hello += b'\x03\x03'                 # TLS 1.2
+    server_hello += os.urandom(32)              # server random
+    server_hello += b'\x20' + os.urandom(32)    # session ID
+    server_hello += struct.pack('!H', 0xc02f)   # cipher suite
+    server_hello += b'\x00'                     # compression null
+    packets.append(
+        base / IP(src=c2_host, dst=src_ip) /
+        TCP(sport=443, dport=sport, flags='PA',
+            seq=server_seq, ack=client_seq) /
+        Raw(load=server_hello)
+    )
+    server_seq += len(server_hello)
+
+    # Client ACK
+    packets.append(
+        base / IP(src=src_ip, dst=c2_host) /
+        TCP(sport=sport, dport=443, flags='A',
+            seq=client_seq, ack=server_seq)
+    )
+
+    # Encrypted application data (beacon payload)
+    beacon_data = b'\x17\x03\x03' + struct.pack('!H', random.randint(64, 256))
+    beacon_data += os.urandom(random.randint(64, 256))
+    packets.append(
+        base / IP(src=src_ip, dst=c2_host) /
+        TCP(sport=sport, dport=443, flags='PA',
+            seq=client_seq, ack=server_seq) /
+        Raw(load=beacon_data)
+    )
+    client_seq += len(beacon_data)
+
+    # Server beacon response
+    resp_data = b'\x17\x03\x03' + struct.pack('!H', random.randint(32, 128))
+    resp_data += os.urandom(random.randint(32, 128))
+    packets.append(
+        base / IP(src=c2_host, dst=src_ip) /
+        TCP(sport=443, dport=sport, flags='PA',
+            seq=server_seq, ack=client_seq) /
+        Raw(load=resp_data)
+    )
+    server_seq += len(resp_data)
+
+    # Client ACK
+    packets.append(
+        base / IP(src=src_ip, dst=c2_host) /
+        TCP(sport=sport, dport=443, flags='A',
+            seq=client_seq, ack=server_seq)
+    )
+
+    # TCP FIN teardown
+    fin_pkts = _tcp_fin(base, src_ip, c2_host, sport, 443,
+                        client_seq, server_seq)
+    packets.extend(fin_pkts)
+    return packets
+
+
 def _sim_c2_beacon(params):
     """
     C2 beaconing: periodic HTTPS callbacks with full TCP sessions.
-    Crafts complete TCP handshakes, TLS ClientHello with SNI, server
-    responses, and connection teardown for each beacon cycle.
+
+    With a Duration set, runs a sustained campaign - one callback every interval
+    with +/- jitter, for the duration - which is what trips behavioural beaconing
+    detections. With no duration it sends a fixed burst of `count` callbacks.
     """
     c2_host = params.get('c2_host', '185.100.87.42')
-    count = params.get('count', 50)
     src_ip = params['src_ip']
     base = _base_packet(params)
+    duration_min = float(params.get('duration_min', 0) or 0)
+    interval_s = float(params.get('delay', 5.0) or 5.0)
+    jitter = float(params.get('jitter', 0) or 0)
 
     log_message(f"    C2 Server: {c2_host}")
+
+    if duration_min > 0 and interval_s > 0:
+        from app.core.beacon import beacon_schedule
+        schedule = beacon_schedule(duration_min * 60, interval_s, jitter)
+        total = len(schedule)
+        active_task_status['total'] = total
+        log_message(f"    Sustained beacon: {total} callbacks over "
+                    f"{duration_min:g} min, ~{interval_s:g}s interval, {jitter:g}% jitter")
+
+        iface = params['interface']
+        for i, gap in enumerate(schedule):
+            if not active_task_status['is_running']:
+                log_message("[!] Stop signal received.")
+                break
+            for pkt in _c2_beacon_session(base, src_ip, c2_host):
+                sendp(pkt, iface=iface, verbose=0)
+            active_task_status['progress'] = i + 1
+            active_task_status['message'] = (
+                f"Beacon {i + 1}/{total} to {c2_host} (next in {gap:.1f}s)")
+            # Sleep the jittered gap in small slices so Stop stays responsive.
+            slept = 0.0
+            while slept < gap and active_task_status['is_running']:
+                step = min(0.5, gap - slept)
+                time.sleep(step)
+                slept += step
+        return
+
+    # Fixed-burst fallback.
+    count = params.get('count', 50)
     log_message(f"    Beacon count: {count}")
-
     packets = []
-    for i in range(count):
-        sport = random.randint(49152, 65535)
-
-        # TCP 3-way handshake
-        hs_pkts, client_seq, server_seq = _tcp_handshake(
-            base, src_ip, c2_host, sport, 443
-        )
-        packets.extend(hs_pkts)
-
-        # TLS ClientHello with SNI
-        tls_hello = _build_tls_client_hello(hostname=c2_host)
-        packets.append(
-            base / IP(src=src_ip, dst=c2_host) /
-            TCP(sport=sport, dport=443, flags='PA',
-                seq=client_seq, ack=server_seq) /
-            Raw(load=tls_hello)
-        )
-        client_seq += len(tls_hello)
-
-        # Server ACK
-        packets.append(
-            base / IP(src=c2_host, dst=src_ip) /
-            TCP(sport=443, dport=sport, flags='A',
-                seq=server_seq, ack=client_seq)
-        )
-
-        # Server TLS ServerHello + Certificate (simulated response)
-        server_hello = b'\x16\x03\x03' + struct.pack('!H', 74)
-        server_hello += b'\x02' + b'\x00\x00\x46'  # ServerHello handshake
-        server_hello += b'\x03\x03'                 # TLS 1.2
-        server_hello += os.urandom(32)              # server random
-        server_hello += b'\x20' + os.urandom(32)    # session ID
-        server_hello += struct.pack('!H', 0xc02f)   # cipher suite
-        server_hello += b'\x00'                     # compression null
-        packets.append(
-            base / IP(src=c2_host, dst=src_ip) /
-            TCP(sport=443, dport=sport, flags='PA',
-                seq=server_seq, ack=client_seq) /
-            Raw(load=server_hello)
-        )
-        server_seq += len(server_hello)
-
-        # Client ACK
-        packets.append(
-            base / IP(src=src_ip, dst=c2_host) /
-            TCP(sport=sport, dport=443, flags='A',
-                seq=client_seq, ack=server_seq)
-        )
-
-        # Encrypted application data (beacon payload)
-        beacon_data = b'\x17\x03\x03' + struct.pack('!H', random.randint(64, 256))
-        beacon_data += os.urandom(random.randint(64, 256))
-        packets.append(
-            base / IP(src=src_ip, dst=c2_host) /
-            TCP(sport=sport, dport=443, flags='PA',
-                seq=client_seq, ack=server_seq) /
-            Raw(load=beacon_data)
-        )
-        client_seq += len(beacon_data)
-
-        # Server beacon response
-        resp_data = b'\x17\x03\x03' + struct.pack('!H', random.randint(32, 128))
-        resp_data += os.urandom(random.randint(32, 128))
-        packets.append(
-            base / IP(src=c2_host, dst=src_ip) /
-            TCP(sport=443, dport=sport, flags='PA',
-                seq=server_seq, ack=client_seq) /
-            Raw(load=resp_data)
-        )
-        server_seq += len(resp_data)
-
-        # Client ACK
-        packets.append(
-            base / IP(src=src_ip, dst=c2_host) /
-            TCP(sport=sport, dport=443, flags='A',
-                seq=client_seq, ack=server_seq)
-        )
-
-        # TCP FIN teardown
-        fin_pkts = _tcp_fin(base, src_ip, c2_host, sport, 443,
-                            client_seq, server_seq)
-        packets.extend(fin_pkts)
-
+    for _ in range(count):
+        packets.extend(_c2_beacon_session(base, src_ip, c2_host))
     _send_with_tracking(packets, params, delay_override=None)
 
 
