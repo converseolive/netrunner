@@ -38,15 +38,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const crumbLabels = {
         viewer: 'PCAP Viewer', rewriter: 'Rewrite & Replay', generator: 'Traffic Generator',
+        detections: 'Detection Results', coverage: 'Coverage Matrix',
         addressbook: 'Address Book', profiles: 'Profiles', settings: 'Settings'
     };
 
+    let detectionsLoaded = false;
     function switchTab(tabId) {
         tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
         panes.forEach(p => p.classList.toggle('active', p.id === `pane-${tabId}`));
         const crumb = document.getElementById('crumb');
         if (crumb && crumbLabels[tabId]) crumb.textContent = crumbLabels[tabId];
         if (tabId === 'settings') loadSettings();
+        if ((tabId === 'detections' || tabId === 'coverage') && !detectionsLoaded) {
+            detectionsLoaded = true;
+            loadDetections();
+        }
     }
 
     tabs.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
@@ -725,7 +731,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ttl: document.getElementById('replayTtl').value || null,
                     vlan_id: document.getElementById('replayVlan').value || null,
                     ip_map: maps.ipMap,
-                    mac_map: maps.macMap
+                    mac_map: maps.macMap,
+                    participant_ips: (analysisData?.endpoints || []).slice(0, 20).map(e => e.ip)
                 })
             });
 
@@ -1399,12 +1406,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const eh = s.extrahop || {};
             const bu = document.getElementById('settingsBaseUrl');
             const ak = document.getElementById('settingsApiKey');
+            const vt = document.getElementById('settingsVerifyTls');
             const nets = document.getElementById('settingsInternalNets');
             if (bu) bu.value = eh.base_url || '';
-            if (ak) ak.value = eh.api_key_id || '';
+            if (ak) { ak.value = ''; ak.placeholder = eh.api_key_set ? 'key stored — leave blank to keep' : 'paste API key'; }
+            if (vt) vt.checked = !!eh.verify_tls;
             if (nets) nets.value = (eh.internal_networks || []).join('\n');
             applianceFromSettings(s);
         } catch (err) { console.error('Failed to load settings:', err); }
+    }
+
+    function extrahopPayload() {
+        const key = document.getElementById('settingsApiKey').value.trim();
+        const p = {
+            base_url: document.getElementById('settingsBaseUrl').value.trim(),
+            verify_tls: document.getElementById('settingsVerifyTls').checked
+        };
+        if (key) p.api_key = key;  // only send a key when one was typed
+        return p;
     }
 
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
@@ -1414,11 +1433,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (netError) netError.textContent = '';
         const nets = document.getElementById('settingsInternalNets').value
             .split('\n').map(x => x.trim()).filter(Boolean);
-        const payload = { extrahop: {
-            base_url: document.getElementById('settingsBaseUrl').value.trim(),
-            api_key_id: document.getElementById('settingsApiKey').value.trim(),
-            internal_networks: nets
-        } };
+        const payload = { extrahop: { ...extrahopPayload(), internal_networks: nets } };
         try {
             const resp = await fetch('/settings', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1427,10 +1442,111 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await resp.json();
             if (!resp.ok) { if (netError) netError.textContent = data.error || 'Save failed.'; return; }
             if (status) { status.textContent = '✓ Saved.'; setTimeout(() => { status.textContent = ''; }, 2000); }
+            document.getElementById('settingsApiKey').value = '';
             applianceFromSettings(data);
         } catch (err) {
             if (netError) netError.textContent = err.message;
         }
+    });
+
+    const testExtrahopBtn = document.getElementById('testExtrahopBtn');
+    if (testExtrahopBtn) testExtrahopBtn.addEventListener('click', async () => {
+        const st = document.getElementById('extrahopTestStatus');
+        st.textContent = 'Testing…';
+        try {
+            const resp = await fetch('/extrahop/test', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(extrahopPayload())
+            });
+            const r = await resp.json();
+            st.textContent = r.ok
+                ? `✓ Connected — ${r.appliance || 'ExtraHop'}${r.version ? ' ' + r.version : ''}`
+                : `✗ ${r.error || 'Connection failed.'}`;
+        } catch (err) { st.textContent = `✗ ${err.message}`; }
+    });
+
+    // ───────── Detection loop ─────────
+    let detectionResult = null;
+
+    function detTile(k, v, s, col) {
+        return `<div class="tile"><div class="k">${k}</div><div class="v" style="color:${col}">${v}</div><div class="s muted">${s}</div></div>`;
+    }
+
+    function detNote(r) {
+        if (r.note === 'not_configured') return 'Showing sample data. Connect your ExtraHop appliance in Settings to validate real runs.';
+        if (r.note === 'no_runs') return 'No adversary runs recorded yet. Run a simulation on the Generate tab, then check again.';
+        if (r.note === 'appliance_error') return 'Could not reach ExtraHop — showing sample data. ' + (r.error || '');
+        return '';
+    }
+
+    function renderDetections(r) {
+        if (!r) return;
+        const note = document.getElementById('detectionsNote');
+        const txt = detNote(r);
+        if (txt) { note.textContent = txt; note.classList.remove('hidden'); } else { note.classList.add('hidden'); }
+
+        const s = r.summary || {};
+        const rate = Math.round((s.detection_rate || 0) * 100);
+        const ttd = s.mean_ttd_ms != null ? Math.round(s.mean_ttd_ms / 1000) + 's' : '—';
+        document.getElementById('detectionTiles').innerHTML =
+            detTile('Detection rate', rate + '%', `${s.detected || 0} of ${s.total || 0} scenarios`, 'var(--ok)') +
+            detTile('Mean time to detect', ttd, 'first packet to alert', 'var(--accent)') +
+            detTile('Missed', (s.missed || 0), 'coverage gaps', (s.missed ? 'var(--crit)' : 'var(--ok)')) +
+            detTile('Scenarios checked', (s.total || 0), r.sample ? 'sample run' : 'from recorded runs', 'var(--text)');
+
+        const body = document.getElementById('detectionBody');
+        body.innerHTML = '';
+        (r.rows || []).forEach(row => {
+            const st = row.status;
+            const pill = st === 'detected' ? 'ok' : (st === 'partial' ? 'warn' : 'crit');
+            const label = st.charAt(0).toUpperCase() + st.slice(1);
+            const riskColor = row.risk >= 80 ? 'var(--crit)' : row.risk >= 55 ? 'var(--warn)' : 'var(--accent)';
+            const risk = row.risk
+                ? `<span class="risk"><span class="bar"><i style="width:${row.risk}%;background:${riskColor}"></i></span>${row.risk}</span>`
+                : '<span class="muted">—</span>';
+            const ttdCell = row.ttd_ms != null ? Math.round(row.ttd_ms / 1000) + 's' : '—';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><div style="font-weight:600">${escHtml(row.name)}</div><div class="mono" style="font-size:11px;color:var(--text-faint)">${escHtml(row.technique || '')}</div></td>
+                <td class="mono" style="font-size:11.5px;color:var(--text-dim)">${escHtml(row.flow || '')}</td>
+                <td>${row.detection ? '<b>' + escHtml(row.detection) + '</b>' : '<span class="muted">—</span>'}</td>
+                <td>${risk}</td>
+                <td class="mono" style="font-size:12px">${ttdCell}</td>
+                <td><span class="pill ${pill}"><span class="d"></span>${label}</span></td>`;
+            body.appendChild(tr);
+        });
+    }
+
+    function renderCoverage(r) {
+        const grid = document.getElementById('coverageGrid');
+        if (!grid || !r) return;
+        grid.innerHTML = '';
+        (r.coverage || []).forEach(col => {
+            const c = document.createElement('div');
+            c.className = 'cov-col';
+            c.innerHTML = `<h4>${escHtml(col.tactic)}</h4>` + col.cells.map(cell =>
+                `<div class="cov-cell ${cell.status}"><span class="cs"></span>${escHtml(cell.name)}<div class="cid">${escHtml(cell.technique || '')}</div></div>`).join('');
+            grid.appendChild(c);
+        });
+    }
+
+    async function loadDetections() {
+        try {
+            const resp = await fetch('/detections/validate', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+            });
+            detectionResult = await resp.json();
+            renderDetections(detectionResult);
+            renderCoverage(detectionResult);
+        } catch (err) { console.error('Failed to load detections:', err); }
+    }
+
+    const checkDetectionsBtn = document.getElementById('checkDetectionsBtn');
+    if (checkDetectionsBtn) checkDetectionsBtn.addEventListener('click', loadDetections);
+
+    const downloadReportBtn = document.getElementById('downloadReportBtn');
+    if (downloadReportBtn) downloadReportBtn.addEventListener('click', () => {
+        window.location.href = '/detections/report';
     });
 
     loadSettings();

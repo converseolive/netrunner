@@ -21,10 +21,24 @@ from app import create_app
 
 app = create_app()
 
+def _env_flag(name):
+    return os.environ.get(name, '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 9000))
-    print(f"\n[*] NetRunner OS starting on http://127.0.0.1:{port}")
+    # Bind to loopback by default; the debug console is an RCE surface, so keep
+    # it off unless explicitly enabled. Override with HOST / DEBUG env vars.
+    host = os.environ.get('HOST', '127.0.0.1')
+    debug = _env_flag('DEBUG')
+
+    print(f"\n[*] NetRunner OS starting on http://{host}:{port}")
     print(f"[*] Running as: {os.getenv('USER', 'unknown')}")
-    if os.geteuid() != 0:
+    if debug:
+        print("[!] DEBUG mode is ON - do not expose this beyond localhost.")
+    if host != '127.0.0.1':
+        print(f"[!] Listening on {host} - reachable off this host. Ensure it is a trusted lab network.")
+    if hasattr(os, 'geteuid') and os.geteuid() != 0:
         print("[!] Warning: Not running as root. Replay/generation requires sudo.\n")
-    app.run(host='0.0.0.0', port=port, debug=True)
+
+    app.run(host=host, port=port, debug=debug)

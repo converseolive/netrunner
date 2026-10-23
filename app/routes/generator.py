@@ -4,7 +4,7 @@ NetRunner OS - Traffic Generator Routes
 
 import threading
 from flask import Blueprint, request, jsonify
-from app.core.engine import active_task_status
+from app.core.engine import active_task_status, register_run
 from app.core.generators import protocol, adversary
 
 bp = Blueprint('generator', __name__)
@@ -88,6 +88,16 @@ def generate_adversary():
             'domain': data.get('domain', 'evil-c2.xyz'),
             'duration': int(data.get('duration', 60)),
         }
+
+        # Record the run so the ExtraHop detection loop can correlate it later.
+        register_run({
+            'scenario': sim_type,
+            'kind': 'adversary',
+            'adversary_ip': params['src_ip'],
+            'victim_ip': params['dst_ip'],
+            'c2_ip': params['c2_host'],
+            'interface': interface,
+        })
 
         thread = threading.Thread(
             target=adversary.generate,

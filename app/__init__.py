@@ -25,6 +25,7 @@ def create_app():
     from app.routes.profiles import bp as profiles_bp
     from app.routes.addresses import bp as addresses_bp
     from app.routes.settings import bp as settings_bp
+    from app.routes.detections import bp as detections_bp
 
     app.register_blueprint(pcap_bp)
     app.register_blueprint(replay_bp)
@@ -32,6 +33,7 @@ def create_app():
     app.register_blueprint(profiles_bp)
     app.register_blueprint(addresses_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(detections_bp)
 
     @app.route('/')
     def index():

@@ -35,6 +35,14 @@
                     <span class="nav-icon">⚡</span>
                     <span class="nav-label">Generate</span>
                 </button>
+                <button class="nav-item" data-tab="detections" id="tab-detections">
+                    <span class="nav-icon">◎</span>
+                    <span class="nav-label">Detections</span>
+                </button>
+                <button class="nav-item" data-tab="coverage" id="tab-coverage">
+                    <span class="nav-icon">▦</span>
+                    <span class="nav-label">Coverage</span>
+                </button>
                 <button class="nav-item" data-tab="addressbook" id="tab-addressbook">
                     <span class="nav-icon">📋</span>
                     <span class="nav-label">Addresses</span>
@@ -510,6 +518,56 @@
                     </div>
                 </div>
 
+                <!-- ═══════════════ DETECTIONS ═══════════════ -->
+                <div id="pane-detections" class="tab-pane">
+                    <section class="section">
+                        <div class="cov-head">
+                            <div>
+                                <div class="eyebrow">Closed-loop validation</div>
+                                <h2 class="section-header" style="margin-top:3px;">Detection Results</h2>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <button id="downloadReportBtn" class="btn btn-sm">↓ Download report</button>
+                                <button id="checkDetectionsBtn" class="btn btn-primary btn-sm">↻ Check ExtraHop</button>
+                            </div>
+                        </div>
+                        <div id="detectionsNote" class="convo-summary hidden"></div>
+                        <div class="tiles" id="detectionTiles"></div>
+                        <div class="panel" style="padding:0; overflow-x:auto;">
+                            <table class="data-table" id="detectionTable" style="min-width:720px;">
+                                <thead>
+                                    <tr>
+                                        <th>Scenario</th><th>Flow</th><th>ExtraHop detection</th>
+                                        <th>Risk</th><th>Time to detect</th><th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detectionBody"></tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- ═══════════════ COVERAGE ═══════════════ -->
+                <div id="pane-coverage" class="tab-pane">
+                    <section class="section">
+                        <div class="cov-head">
+                            <div>
+                                <div class="eyebrow">MITRE ATT&CK</div>
+                                <h2 class="section-header" style="margin-top:3px;">Coverage Matrix</h2>
+                            </div>
+                            <div class="cov-legend">
+                                <span><i class="c det"></i> Detected</span>
+                                <span><i class="c part"></i> Partial</span>
+                                <span><i class="c miss"></i> Missed</span>
+                                <span><i class="c nr"></i> Not run</span>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="matrix-wrap"><div class="matrix-grid" id="coverageGrid"></div></div>
+                        </div>
+                    </section>
+                </div>
+
                 <!-- ═══════════════ TAB 4: ADDRESS BOOK ═══════════════ -->
                 <div id="pane-addressbook" class="tab-pane">
                     <section class="section">
@@ -570,9 +628,16 @@
                                     <input type="text" id="settingsBaseUrl" placeholder="https://lab-sensor1.example" class="form-input">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">API key ID</label>
-                                    <input type="text" id="settingsApiKey" placeholder="key identifier" class="form-input">
+                                    <label class="form-label">REST API key</label>
+                                    <input type="password" id="settingsApiKey" placeholder="paste API key" class="form-input" autocomplete="off">
                                 </div>
+                            </div>
+                            <label class="checkbox-label" style="margin-top: 12px;">
+                                <input type="checkbox" id="settingsVerifyTls"> Verify TLS certificate (leave off for self-signed lab appliances)
+                            </label>
+                            <div class="form-row" style="margin-top: 12px;">
+                                <button id="testExtrahopBtn" class="btn btn-sm">Test connection</button>
+                                <span id="extrahopTestStatus" class="status-text"></span>
                             </div>
                             <div class="form-group" style="margin-top: 1rem;">
                                 <label class="form-label">Internal networks — one CIDR per line</label>

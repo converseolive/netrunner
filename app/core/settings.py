@@ -22,6 +22,8 @@ _DEFAULTS = {
     "extrahop": {
         "base_url": "",
         "api_key_id": "",
+        "api_key": "",
+        "verify_tls": False,
         "internal_networks": [],
     }
 }
@@ -71,12 +73,26 @@ def save_settings(data):
     """
     Merge `data` into the stored settings and persist. Raises ValueError if the
     ExtraHop internal_networks contain an invalid CIDR.
+
+    The API key is only overwritten when a non-empty value is supplied, so a UI
+    that never echoes the secret back can save other fields without wiping it.
     """
     current = get_settings()
     incoming = (data or {}).get("extrahop") or {}
 
-    eh = {**current["extrahop"],
-          **{k: v for k, v in incoming.items() if k != "internal_networks"}}
+    eh = dict(current["extrahop"])
+    for k, v in incoming.items():
+        if k == "internal_networks":
+            continue
+        if k == "api_key":
+            if v:  # don't clobber a stored key with a blank
+                eh["api_key"] = v
+            continue
+        if k == "verify_tls":
+            eh["verify_tls"] = bool(v)
+            continue
+        eh[k] = v
+
     if "internal_networks" in incoming:
         ok, err, norm = validate_networks(incoming["internal_networks"])
         if not ok:
@@ -88,3 +104,13 @@ def save_settings(data):
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(current, f, indent=2)
     return current
+
+
+def public_settings():
+    """Settings safe to send to the browser: the API key secret is masked."""
+    s = get_settings()
+    eh = dict(s["extrahop"])
+    eh["api_key_set"] = bool(eh.get("api_key"))
+    eh["api_key"] = ""
+    s["extrahop"] = eh
+    return s

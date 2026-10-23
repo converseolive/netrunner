@@ -2,9 +2,10 @@
 NetRunner OS - Replay Routes
 """
 
+import os
 import threading
 from flask import Blueprint, request, jsonify, current_app, Response
-from app.core.engine import replay_pcap_task, active_task_status
+from app.core.engine import replay_pcap_task, active_task_status, register_run
 import json
 import time
 
@@ -23,10 +24,10 @@ def start_replay():
         if not filepath:
             return jsonify({'error': 'No PCAP file loaded. Please upload one first.'}), 400
 
-        import os
         if not os.path.exists(filepath):
             return jsonify({'error': 'PCAP file not found.'}), 400
 
+        ip_map = data.get('ip_map', {})
         params = {
             'filepath': filepath,
             'interface': data.get('interface', 'eth0'),
@@ -35,10 +36,24 @@ def start_replay():
             'loop_count': int(data.get('loop_count', 0)),
             'ttl': int(data['ttl']) if data.get('ttl') else None,
             'vlan_id': int(data['vlan_id']) if data.get('vlan_id') else None,
-            'ip_map': data.get('ip_map', {}),
+            'ip_map': ip_map,
             'mac_map': data.get('mac_map', {}),
             'port_map': data.get('port_map', {})
         }
+
+        # Record the run so the ExtraHop detection loop can correlate it. The IPs
+        # on the wire are the rewrite targets plus any original IPs left untouched.
+        wire_ips = list(ip_map.values())
+        for ip in (data.get('participant_ips') or []):
+            if ip and ip not in ip_map:  # not rewritten -> original IP stays on the wire
+                wire_ips.append(ip)
+        register_run({
+            'kind': 'replay',
+            'scenario': None,
+            'label': f"Replay: {os.path.basename(filepath)}",
+            'ips': wire_ips,
+            'interface': params['interface'],
+        })
 
         # Reset state
         active_task_status['is_running'] = True
