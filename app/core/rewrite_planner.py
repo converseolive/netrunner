@@ -173,7 +173,7 @@ def _ip_sort_key(ip):
 # ── Plan generation ───────────────────────────────────────────────────────────
 
 def suggest_plan(addressing, lab_subnet, rewrite_macs=False,
-                 lab_gateway_mac=None):
+                 lab_gateway_mac=None, internal_networks=None):
     """
     Produce a rewrite plan mapping the capture's internal /24s into `lab_subnet`.
 
@@ -278,6 +278,22 @@ def suggest_plan(addressing, lab_subnet, rewrite_macs=False,
                 "span/tap replay path."
             )
 
+    # Locality check: a lab range the NDR does not treat as internal makes the
+    # remapped hosts look external, which inverts internal-vs-external detections.
+    if internal_networks:
+        if networks_contain(lab_subnet, internal_networks):
+            notes.append(
+                f"Lab subnet {lab_subnet} falls inside the configured internal "
+                f"networks, so remapped hosts classify as internal to the sensor."
+            )
+        else:
+            warnings.append(
+                f"Lab subnet {lab_subnet} is outside the sensor's internal "
+                f"networks ({', '.join(internal_networks)}). Hosts remapped here "
+                f"would be seen as external, inverting internal-vs-external "
+                f"detections - pick a range inside one of those networks."
+            )
+
     return {
         "ip_map": ip_map,
         "mac_map": mac_map,
@@ -286,6 +302,54 @@ def suggest_plan(addressing, lab_subnet, rewrite_macs=False,
         "notes": notes,
         "warnings": warnings,
     }
+
+
+def networks_contain(subnet, networks):
+    """
+    Return the first CIDR in `networks` that fully contains `subnet`, else None.
+
+    Used to confirm a chosen lab range sits inside the address space the NDR
+    (e.g. ExtraHop) is configured to treat as internal.
+    """
+    try:
+        sub = ipaddress.ip_network(subnet, strict=False)
+    except (ValueError, TypeError):
+        return None
+    for n in networks or []:
+        try:
+            net = ipaddress.ip_network(str(n).strip(), strict=False)
+        except ValueError:
+            continue
+        if net.version == sub.version and sub.subnet_of(net):
+            return str(net)
+    return None
+
+
+def suggest_lab_subnet(addressing, internal_networks):
+    """
+    Pick a configured internal network big enough to hold the capture's /24s.
+
+    Prefers the smallest internal network that still fits every internal /24 in
+    the capture (tight allocation), falling back to the largest available one.
+    Returns a CIDR string, or None when no usable IPv4 internal network is set.
+    """
+    needed = max(1, len(addressing.get("subnets", [])))
+    candidates = []
+    for n in internal_networks or []:
+        try:
+            net = ipaddress.ip_network(str(n).strip(), strict=False)
+        except ValueError:
+            continue
+        if net.version != 4:
+            continue
+        capacity = max(1, net.num_addresses // 256)
+        candidates.append((capacity, net))
+    if not candidates:
+        return None
+    fits = [c for c in candidates if c[0] >= needed]
+    if fits:
+        return str(min(fits, key=lambda c: c[0])[1])
+    return str(max(candidates, key=lambda c: c[0])[1])
 
 
 def _int_to_octets(value):

@@ -9,7 +9,10 @@ from collections import defaultdict, Counter
 from scapy.all import PcapReader, PcapWriter, Ether, IP, TCP, UDP, ICMP, Raw, Dot1Q, DNS, ARP
 
 from app.core.threat_analysis import analyze_threats
-from app.core.rewrite_planner import summarize_addressing, suggest_plan
+from app.core.rewrite_planner import (
+    summarize_addressing, suggest_plan, suggest_lab_subnet)
+from app.core.rewrite_audit import audit_capture
+from app.core.settings import get_settings
 
 bp = Blueprint('pcap', __name__)
 
@@ -59,6 +62,11 @@ def analyze_pcap():
         flows = defaultdict(_new_flow)
         arp = {'ip_to_macs': defaultdict(set), 'mac_to_ips': defaultdict(set),
                'gratuitous_by_mac': Counter()}
+
+        # ── Rewrite-audit facts (VLAN tags, TTLs, HTTP hosts) ────────────────
+        audit_vlans = set()
+        audit_ttls = set()
+        audit_http_hosts = set()
 
         with PcapReader(filepath) as pcap_reader:
             for i, packet in enumerate(pcap_reader):
@@ -167,6 +175,30 @@ def analyze_pcap():
                 if has_ip and has_ether:
                     ip_to_mac_map[packet[IP].src] = packet[Ether].src
                     ip_to_mac_map[packet[IP].dst] = packet[Ether].dst
+
+                # ── Rewrite-audit facts ──
+                if packet.haslayer(Dot1Q) and len(audit_vlans) < 64:
+                    try:
+                        audit_vlans.add(int(packet[Dot1Q].vlan))
+                    except Exception:
+                        pass
+                if has_ip and len(audit_ttls) < 64:
+                    try:
+                        audit_ttls.add(int(packet[IP].ttl))
+                    except Exception:
+                        pass
+                if packet.haslayer(Raw) and packet.haslayer(TCP) \
+                        and len(audit_http_hosts) < 128:
+                    load = bytes(packet[Raw].load)[:512]
+                    if b"Host:" in load:
+                        for line in load.split(b"\r\n"):
+                            if line[:5].lower() == b"host:":
+                                try:
+                                    audit_http_hosts.add(
+                                        line[5:].strip().decode("ascii", "ignore"))
+                                except Exception:
+                                    pass
+                                break
 
                 # Packet summaries for viewer
                 if len(packet_summaries) < PACKET_VIEWER_LIMIT:
@@ -296,6 +328,19 @@ def analyze_pcap():
         # used by the rewrite-plan workflow.
         addressing = summarize_addressing(hosts, endpoint_list)
 
+        # Rewrite audit: which identifiers to rewrite / protect / review before
+        # replaying this capture into the lab.
+        audit_dns = set()
+        for _fl in flows.values():
+            audit_dns.update(_fl['dns_qnames'])
+        audit = audit_capture(addressing, {
+            'hosts': hosts,
+            'vlans': sorted(audit_vlans),
+            'ttls': sorted(audit_ttls),
+            'dns_qnames': sorted(audit_dns),
+            'http_hosts': sorted(audit_http_hosts),
+        })
+
         return jsonify({
             "packets": packet_summaries,
             "hosts": hosts,
@@ -304,6 +349,7 @@ def analyze_pcap():
             "timeline": timeline,
             "threats": threats,
             "addressing": addressing,
+            "audit": audit,
             "total_packets": i + 1 if 'i' in dir() else 0,
             "filepath": filepath
         })
@@ -419,9 +465,6 @@ def suggest_rewrite_plan():
     """
     try:
         data = request.get_json() or {}
-        lab_subnet = (data.get('lab_subnet') or '').strip()
-        if not lab_subnet:
-            return jsonify({'error': 'lab_subnet is required (e.g. 10.99.0.0/16).'}), 400
 
         # Prefer a prebuilt addressing summary; otherwise derive it from hosts.
         addressing = data.get('addressing')
@@ -430,13 +473,29 @@ def suggest_rewrite_plan():
                 data.get('hosts', []), data.get('endpoints', [])
             )
 
+        # Internal networks: from the request, else the saved ExtraHop settings.
+        internal_networks = data.get('internal_networks')
+        if internal_networks is None:
+            internal_networks = get_settings().get('extrahop', {}).get(
+                'internal_networks', [])
+
+        lab_subnet = (data.get('lab_subnet') or '').strip()
+        if not lab_subnet:
+            # Fall back to a range the sensor treats as internal, if configured.
+            lab_subnet = suggest_lab_subnet(addressing, internal_networks) or ''
+        if not lab_subnet:
+            return jsonify({'error': 'lab_subnet is required (e.g. 10.99.0.0/16), '
+                            'or configure ExtraHop internal networks in Settings.'}), 400
+
         plan = suggest_plan(
             addressing,
             lab_subnet,
             rewrite_macs=bool(data.get('rewrite_macs', False)),
             lab_gateway_mac=data.get('lab_gateway_mac'),
+            internal_networks=internal_networks,
         )
-        return jsonify({'addressing': addressing, 'plan': plan})
+        return jsonify({'addressing': addressing, 'plan': plan,
+                        'lab_subnet': lab_subnet})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

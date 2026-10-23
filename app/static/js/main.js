@@ -36,9 +36,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabs = document.querySelectorAll('.nav-item');
     const panes = document.querySelectorAll('.tab-pane');
 
+    const crumbLabels = {
+        viewer: 'PCAP Viewer', rewriter: 'Rewrite & Replay', generator: 'Traffic Generator',
+        addressbook: 'Address Book', profiles: 'Profiles', settings: 'Settings'
+    };
+
     function switchTab(tabId) {
         tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
         panes.forEach(p => p.classList.toggle('active', p.id === `pane-${tabId}`));
+        const crumb = document.getElementById('crumb');
+        if (crumb && crumbLabels[tabId]) crumb.textContent = crumbLabels[tabId];
+        if (tabId === 'settings') loadSettings();
     }
 
     tabs.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
@@ -107,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderFlowDiagram(data.conversations, data.endpoints);
             populateRewriterHosts(data.hosts);
             renderAddressingSummary(data.addressing);
+            renderAudit(data.audit);
 
             switchView('packets');
 
@@ -1286,6 +1295,145 @@ document.addEventListener('DOMContentLoaded', () => {
     // INIT
     // ═══════════════════════════════════════════════════════════════════
 
+    // ───────── Theme & accent ─────────
+    const themeBtn = document.getElementById('themeBtn');
+    if (themeBtn) themeBtn.addEventListener('click', () => {
+        const root = document.documentElement;
+        const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+        const cur = root.getAttribute('data-theme') || (dark ? 'dark' : 'light');
+        const next = cur === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        try { localStorage.setItem('nr-theme', next); } catch (e) {}
+    });
+    try {
+        const savedTheme = localStorage.getItem('nr-theme');
+        if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+    } catch (e) {}
+
+    document.querySelectorAll('#accentSeg [data-accent]').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('#accentSeg [data-accent]').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const a = b.dataset.accent;
+        if (a) document.documentElement.setAttribute('data-accent', a);
+        else document.documentElement.removeAttribute('data-accent');
+        try { localStorage.setItem('nr-accent', a || ''); } catch (e) {}
+    }));
+    try {
+        const savedAccent = localStorage.getItem('nr-accent');
+        if (savedAccent) {
+            document.documentElement.setAttribute('data-accent', savedAccent);
+            document.querySelectorAll('#accentSeg [data-accent]').forEach(x =>
+                x.classList.toggle('active', x.dataset.accent === savedAccent));
+        }
+    } catch (e) {}
+
+    // ───────── Rewrite Audit ─────────
+    const auditPill = { rewrite: 'act', review: 'warn', protect: 'ok' };
+    const auditLabel = { rewrite: 'Rewrite', review: 'Review', protect: 'Protect' };
+    let auditData = [];
+    let auditFilter = 'all';
+
+    function renderAudit(audit) {
+        const sum = document.getElementById('auditSum');
+        const verdict = document.getElementById('auditVerdict');
+        if (!document.getElementById('auditRows')) return;
+        audit = audit || { summary: {}, findings: [] };
+        auditData = audit.findings || [];
+        const s = audit.summary || {};
+        if (sum) sum.innerHTML =
+            `<div class="s rw"><span class="n">${s.rewrite || 0}</span><span class="l">Rewrite</span></div>
+             <div class="s rv"><span class="n">${s.review || 0}</span><span class="l">Review</span></div>
+             <div class="s pr"><span class="n">${s.protect || 0}</span><span class="l">Protect</span></div>`;
+        if (verdict) verdict.textContent = s.verdict || '';
+        renderAuditRows();
+    }
+
+    function renderAuditRows() {
+        const rows = document.getElementById('auditRows');
+        if (!rows) return;
+        const shown = auditData.filter(f => auditFilter === 'all' || f.bucket === auditFilter);
+        if (!shown.length) { rows.innerHTML = '<div class="placeholder">Nothing in this bucket.</div>'; return; }
+        rows.innerHTML = '';
+        shown.forEach(f => {
+            const el = document.createElement('div');
+            el.className = 'audit-row';
+            const target = f.suggestion ? `<div class="ar-target">→ ${escHtml(f.suggestion)}</div>` : '';
+            el.innerHTML = `
+                <span class="pill ${auditPill[f.bucket] || 'ok'}"><span class="d"></span>${auditLabel[f.bucket] || f.bucket}</span>
+                <div class="ar-body">
+                    <div class="ar-top"><span class="ar-cat">${escHtml(f.category)}</span><span class="ar-val">${escHtml(f.value)}</span></div>
+                    <div class="ar-detail">${escHtml(f.detail)}</div>
+                </div>
+                <div class="ar-action"><div class="ar-do">${escHtml(f.action)}</div>${target}</div>`;
+            rows.appendChild(el);
+        });
+    }
+
+    document.querySelectorAll('#auditFilter [data-f]').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('#auditFilter [data-f]').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        auditFilter = b.dataset.f;
+        renderAuditRows();
+    }));
+
+    // ───────── Settings (ExtraHop) ─────────
+    function applianceFromSettings(s) {
+        const dot = document.getElementById('applianceDot');
+        const text = document.getElementById('applianceText');
+        const eh = (s && s.extrahop) || {};
+        if (eh.base_url) {
+            let host = eh.base_url;
+            try { host = new URL(eh.base_url).host || eh.base_url; } catch (e) {}
+            if (text) text.textContent = `ExtraHop · ${host}`;
+            if (dot) dot.classList.remove('off');
+        } else {
+            if (text) text.textContent = 'ExtraHop · not configured';
+            if (dot) dot.classList.add('off');
+        }
+    }
+
+    async function loadSettings() {
+        try {
+            const resp = await fetch('/settings');
+            const s = await resp.json();
+            const eh = s.extrahop || {};
+            const bu = document.getElementById('settingsBaseUrl');
+            const ak = document.getElementById('settingsApiKey');
+            const nets = document.getElementById('settingsInternalNets');
+            if (bu) bu.value = eh.base_url || '';
+            if (ak) ak.value = eh.api_key_id || '';
+            if (nets) nets.value = (eh.internal_networks || []).join('\n');
+            applianceFromSettings(s);
+        } catch (err) { console.error('Failed to load settings:', err); }
+    }
+
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', async () => {
+        const status = document.getElementById('settingsStatus');
+        const netError = document.getElementById('settingsNetError');
+        if (netError) netError.textContent = '';
+        const nets = document.getElementById('settingsInternalNets').value
+            .split('\n').map(x => x.trim()).filter(Boolean);
+        const payload = { extrahop: {
+            base_url: document.getElementById('settingsBaseUrl').value.trim(),
+            api_key_id: document.getElementById('settingsApiKey').value.trim(),
+            internal_networks: nets
+        } };
+        try {
+            const resp = await fetch('/settings', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (!resp.ok) { if (netError) netError.textContent = data.error || 'Save failed.'; return; }
+            if (status) { status.textContent = '✓ Saved.'; setTimeout(() => { status.textContent = ''; }, 2000); }
+            applianceFromSettings(data);
+        } catch (err) {
+            if (netError) netError.textContent = err.message;
+        }
+    });
+
+    loadSettings();
     loadProfiles();
     loadAddresses();
 

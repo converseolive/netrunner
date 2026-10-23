@@ -4,18 +4,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NetRunner OS</title>
-    <meta name="description" content="Network traffic simulation, PCAP replay, and analysis for NDR testing.">
+    <title>NetRunner Console</title>
+    <meta name="description" content="Network traffic simulation, PCAP replay, and NDR detection testing for ExtraHop labs.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body>
     <div class="app-layout">
-        <!-- Sidebar -->
+        <!-- Rail -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
                 <h1 class="sidebar-logo">NR</h1>
@@ -25,616 +25,571 @@
             <nav class="sidebar-nav">
                 <button class="nav-item active" data-tab="viewer" id="tab-viewer">
                     <span class="nav-icon">◉</span>
-                    <span class="nav-label">PCAP Viewer</span>
+                    <span class="nav-label">Viewer</span>
                 </button>
                 <button class="nav-item" data-tab="rewriter" id="tab-rewriter">
                     <span class="nav-icon">⇄</span>
-                    <span class="nav-label">Rewriter & Replay</span>
+                    <span class="nav-label">Rewrite</span>
                 </button>
                 <button class="nav-item" data-tab="generator" id="tab-generator">
                     <span class="nav-icon">⚡</span>
-                    <span class="nav-label">Traffic Generator</span>
+                    <span class="nav-label">Generate</span>
                 </button>
                 <button class="nav-item" data-tab="addressbook" id="tab-addressbook">
                     <span class="nav-icon">📋</span>
-                    <span class="nav-label">Address Book</span>
+                    <span class="nav-label">Addresses</span>
                 </button>
                 <button class="nav-item" data-tab="profiles" id="tab-profiles">
                     <span class="nav-icon">🪪</span>
                     <span class="nav-label">Profiles</span>
                 </button>
+                <button class="nav-item" data-tab="settings" id="tab-settings">
+                    <span class="nav-icon">⚙</span>
+                    <span class="nav-label">Settings</span>
+                </button>
             </nav>
-            <div class="sidebar-footer">
-                <span class="sidebar-footer-text">Network Simulator v1.0</span>
-            </div>
         </aside>
 
-        <!-- Main Content -->
+        <!-- Main -->
         <div class="main-content">
-
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- TAB 1: PCAP VIEWER                                            -->
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div id="pane-viewer" class="tab-pane active">
-                <!-- Upload Bar -->
-                <div class="upload-bar">
-                    <div class="upload-group">
-                        <label for="pcapFile" class="upload-label">Select PCAP file</label>
-                        <input type="file" id="pcapFile" accept=".pcap,.pcapng,.cap" class="file-input">
-                    </div>
-                    <button id="analyzeBtn" class="btn btn-primary" disabled>Analyze</button>
-                    <div id="analysisStatus" class="status-text hidden"></div>
+            <header class="topbar">
+                <div class="crumb" id="crumb">PCAP Viewer</div>
+                <div class="topbar-spacer"></div>
+                <div class="appliance" id="applianceChip" title="Target NDR appliance">
+                    <span class="dot off" id="applianceDot"></span>
+                    <span id="applianceText">ExtraHop · not configured</span>
                 </div>
-
-                <!-- View Mode Switcher -->
-                <div id="viewerControls" class="viewer-controls hidden">
-                    <div class="view-mode-group">
-                        <button class="view-mode-btn active" data-view="packets">Packets</button>
-                        <button class="view-mode-btn" data-view="flow">Traffic Flow</button>
-                        <button class="view-mode-btn" data-view="endpoints">Endpoints</button>
-                        <button class="view-mode-btn" data-view="conversations">Conversations</button>
-                        <button class="view-mode-btn view-mode-threats" data-view="threats">
-                            Threats <span class="threat-count-badge hidden" id="threatCountBadge">0</span>
-                        </button>
-                    </div>
-                    <div class="packet-count" id="packetCount"></div>
+                <div class="seg" id="accentSeg" title="Accent">
+                    <button data-accent="" class="active">Iris</button>
+                    <button data-accent="signal">Signal</button>
+                    <button data-accent="ember">Ember</button>
                 </div>
+                <button class="btn btn-sm" id="themeBtn" title="Toggle light / dark">◐</button>
+            </header>
 
-                <!-- Packets View -->
-                <div id="view-packets" class="view-panel hidden">
-                    <div class="split-pane">
-                        <div class="packet-list-pane" id="packetListPane">
-                            <table class="data-table" id="packetTable">
-                                <thead>
-                                    <tr>
-                                        <th class="col-num">No.</th>
-                                        <th class="col-src">Source</th>
-                                        <th class="col-dst">Destination</th>
-                                        <th class="col-proto">Protocol</th>
-                                        <th class="col-len">Length</th>
-                                        <th class="col-info">Info</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="packetBody"></tbody>
-                            </table>
+            <div class="content-scroll">
+
+                <!-- ═══════════════ TAB 1: VIEWER ═══════════════ -->
+                <div id="pane-viewer" class="tab-pane active">
+                    <div class="upload-bar">
+                        <div class="upload-group">
+                            <label for="pcapFile" class="upload-label">Select PCAP file</label>
+                            <input type="file" id="pcapFile" accept=".pcap,.pcapng,.cap" class="file-input">
                         </div>
-                        <div class="packet-detail-pane" id="packetDetailPane">
-                            <h3 class="detail-title">Packet Details</h3>
-                            <div id="packetDetails" class="detail-content">
-                                <span class="placeholder">Select a packet to inspect...</span>
+                        <button id="analyzeBtn" class="btn btn-primary" disabled>Analyze</button>
+                        <div id="analysisStatus" class="status-text hidden"></div>
+                    </div>
+
+                    <div id="viewerControls" class="viewer-controls hidden">
+                        <div class="view-mode-group">
+                            <button class="view-mode-btn active" data-view="packets">Packets</button>
+                            <button class="view-mode-btn" data-view="flow">Traffic Flow</button>
+                            <button class="view-mode-btn" data-view="endpoints">Endpoints</button>
+                            <button class="view-mode-btn" data-view="conversations">Conversations</button>
+                            <button class="view-mode-btn view-mode-threats" data-view="threats">
+                                Threats <span class="threat-count-badge hidden" id="threatCountBadge">0</span>
+                            </button>
+                        </div>
+                        <div class="packet-count" id="packetCount"></div>
+                    </div>
+
+                    <div id="view-packets" class="view-panel hidden">
+                        <div class="split-pane">
+                            <div class="packet-list-pane" id="packetListPane">
+                                <table class="data-table" id="packetTable">
+                                    <thead>
+                                        <tr>
+                                            <th class="col-num">No.</th>
+                                            <th class="col-src">Source</th>
+                                            <th class="col-dst">Destination</th>
+                                            <th class="col-proto">Protocol</th>
+                                            <th class="col-len">Length</th>
+                                            <th class="col-info">Info</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="packetBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="packet-detail-pane" id="packetDetailPane">
+                                <h3 class="detail-title">Packet Details</h3>
+                                <div id="packetDetails" class="detail-content">
+                                    <span class="placeholder">Select a packet to inspect...</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Traffic Flow View -->
-                <div id="view-flow" class="view-panel hidden">
-                    <div class="flow-container" id="flowContainer">
-                        <svg id="flowSvg" class="flow-svg"></svg>
+                    <div id="view-flow" class="view-panel hidden">
+                        <div class="flow-container" id="flowContainer">
+                            <svg id="flowSvg" class="flow-svg"></svg>
+                        </div>
+                        <div class="flow-legend">
+                            <span class="legend-item"><span class="legend-dot" style="background:#4f8cff"></span> TCP</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#8b7bf0"></span> UDP</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#17b3c9"></span> ICMP</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#d98324"></span> Other</span>
+                        </div>
                     </div>
-                    <div class="flow-legend">
-                        <span class="legend-item"><span class="legend-dot" style="background:#4f8cff"></span> TCP</span>
-                        <span class="legend-item"><span class="legend-dot" style="background:#a78bfa"></span> UDP</span>
-                        <span class="legend-item"><span class="legend-dot" style="background:#22d3ee"></span>
-                            ICMP</span>
-                        <span class="legend-item"><span class="legend-dot" style="background:#fbbf24"></span>
-                            Other</span>
+
+                    <div id="view-endpoints" class="view-panel hidden">
+                        <table id="endpointsTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort-key="ip">IP Address <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="mac">MAC Address <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="tx_pkts">Tx Packets <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="rx_pkts">Rx Packets <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="tx_bytes">Tx Bytes <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="rx_bytes">Rx Bytes <span class="sort-arrow"></span></th>
+                                    <th>Protocols</th>
+                                </tr>
+                            </thead>
+                            <tbody id="endpointsBody"></tbody>
+                        </table>
                     </div>
-                </div>
 
-                <!-- Endpoints View -->
-                <div id="view-endpoints" class="view-panel hidden">
-                    <table id="endpointsTable" class="data-table">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-sort-key="ip">IP Address <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="mac">MAC Address <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="tx_pkts">Tx Packets <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="rx_pkts">Rx Packets <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="tx_bytes">Tx Bytes <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="rx_bytes">Rx Bytes <span class="sort-arrow"></span></th>
-                                <th>Protocols</th>
-                            </tr>
-                        </thead>
-                        <tbody id="endpointsBody"></tbody>
-                    </table>
-                </div>
+                    <div id="view-conversations" class="view-panel hidden">
+                        <div id="conversationSummary" class="convo-summary hidden"></div>
+                        <table id="conversationsTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort-key="addr_a">Address A <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="addr_b">Address B <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="pkts">Packets <span class="sort-arrow"></span></th>
+                                    <th class="sortable" data-sort-key="bytes">Bytes <span class="sort-arrow"></span></th>
+                                    <th>Protocols</th>
+                                    <th class="sortable" data-sort-key="duration">Duration <span class="sort-arrow"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="conversationsBody"></tbody>
+                        </table>
+                    </div>
 
-                <!-- Conversations View -->
-                <div id="view-conversations" class="view-panel hidden">
-                    <div id="conversationSummary" class="convo-summary hidden"></div>
-                    <table id="conversationsTable" class="data-table">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-sort-key="addr_a">Address A <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="addr_b">Address B <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="pkts">Packets <span class="sort-arrow"></span></th>
-                                <th class="sortable" data-sort-key="bytes">Bytes <span class="sort-arrow"></span></th>
-                                <th>Protocols</th>
-                                <th class="sortable" data-sort-key="duration">Duration <span class="sort-arrow"></span></th>
-                            </tr>
-                        </thead>
-                        <tbody id="conversationsBody"></tbody>
-                    </table>
-                </div>
-
-                <!-- Threat Analysis View -->
-                <div id="view-threats" class="view-panel hidden">
-                    <div id="threatSummary" class="threat-summary hidden"></div>
-                    <div id="threatList" class="threat-list">
-                        <div class="placeholder">No analysis run yet.</div>
+                    <div id="view-threats" class="view-panel hidden">
+                        <div id="threatSummary" class="threat-summary hidden"></div>
+                        <div id="threatList" class="threat-list">
+                            <div class="placeholder">No analysis run yet.</div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- TAB 2: REWRITER & REPLAY                                      -->
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div id="pane-rewriter" class="tab-pane">
-                <div id="rewriterNoFile" class="empty-state">
-                    <p>Upload a PCAP on the <strong class="link-text" id="rewriter-nav-to-viewer">PCAP Viewer</strong>
-                        tab
-                        first.</p>
-                </div>
+                <!-- ═══════════════ TAB 2: REWRITE & REPLAY ═══════════════ -->
+                <div id="pane-rewriter" class="tab-pane">
+                    <div id="rewriterNoFile" class="empty-state">
+                        <p>Upload a PCAP on the <strong class="link-text" id="rewriter-nav-to-viewer">Viewer</strong> tab first.</p>
+                    </div>
 
-                <div id="rewriterContent" class="hidden">
-                    <!-- Rewrite Planner -->
-                    <section class="section">
-                        <h2 class="section-header">Rewrite Planner</h2>
-                        <div class="panel">
-                            <div id="addressingSummary" class="addressing-summary"></div>
-                            <div class="form-grid cols-4" style="margin-top: 1rem;">
-                                <div class="form-group">
-                                    <label class="form-label">Lab Subnet</label>
-                                    <input type="text" id="planLabSubnet" value="10.99.0.0/16"
-                                        placeholder="e.g. 10.99.0.0/16" class="form-input">
+                    <div id="rewriterContent" class="hidden">
+                        <!-- Rewrite Audit -->
+                        <section class="section" id="auditSection">
+                            <h2 class="section-header">Rewrite Audit</h2>
+                            <div class="panel">
+                                <div class="audit-head">
+                                    <div>
+                                        <div class="eyebrow">Before you replay</div>
+                                        <p class="audit-verdict" id="auditVerdict">Analyze a capture to audit it.</p>
+                                    </div>
+                                    <div class="audit-sum" id="auditSum"></div>
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label">Lab Gateway MAC</label>
-                                    <input type="text" id="planLabGwMac" placeholder="Optional (L2 path only)"
-                                        class="form-input">
+                                <div class="audit-toolbar">
+                                    <div class="seg" id="auditFilter">
+                                        <button data-f="all" class="active">All</button>
+                                        <button data-f="rewrite">Rewrite</button>
+                                        <button data-f="review">Review</button>
+                                        <button data-f="protect">Protect</button>
+                                    </div>
                                 </div>
-                                <div class="form-group" style="justify-content: flex-end;">
+                                <div id="auditRows"></div>
+                            </div>
+                        </section>
+
+                        <!-- Rewrite Planner -->
+                        <section class="section">
+                            <h2 class="section-header">Rewrite Planner</h2>
+                            <div class="panel">
+                                <div id="addressingSummary" class="addressing-summary"></div>
+                                <div class="form-grid cols-4" style="margin-top: 1rem;">
+                                    <div class="form-group">
+                                        <label class="form-label">Lab Subnet</label>
+                                        <input type="text" id="planLabSubnet" value="10.99.0.0/16"
+                                            placeholder="e.g. 10.99.0.0/16" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Lab Gateway MAC</label>
+                                        <input type="text" id="planLabGwMac" placeholder="Optional (L2 path only)"
+                                            class="form-input">
+                                    </div>
+                                    <div class="form-group" style="justify-content: flex-end;">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="planRewriteMacs"> Rewrite MACs (active L2 device)
+                                        </label>
+                                    </div>
+                                    <div class="form-group" style="display: flex; align-items: flex-end; gap: 0.5rem;">
+                                        <button id="suggestPlanBtn" class="btn btn-primary btn-sm">Suggest Plan</button>
+                                        <button id="applyPlanBtn" class="btn btn-accent btn-sm hidden">Apply to Form</button>
+                                    </div>
+                                </div>
+                                <div id="planResult" class="plan-result hidden"></div>
+                            </div>
+                        </section>
+
+                        <!-- Discovered Hosts -->
+                        <section class="section">
+                            <h2 class="section-header">Discovered Hosts</h2>
+                            <div class="panel">
+                                <table class="data-table compact">
+                                    <thead>
+                                        <tr>
+                                            <th>Original IP</th>
+                                            <th>MAC</th>
+                                            <th>Label</th>
+                                            <th class="col-arrow"></th>
+                                            <th>New IP</th>
+                                            <th>New MAC</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rewriteHostsBody"></tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <!-- Replay Settings -->
+                        <section class="section">
+                            <h2 class="section-header">Replay Settings</h2>
+                            <div class="panel">
+                                <div class="form-grid cols-4">
+                                    <div class="form-group">
+                                        <label class="form-label">Interface</label>
+                                        <input type="text" id="replayInterface" placeholder="e.g., eth0" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Speed</label>
+                                        <select id="replaySpeed" class="form-input">
+                                            <option value="original">Original Timing</option>
+                                            <option value="fast">As Fast As Possible</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">TTL</label>
+                                        <input type="number" id="replayTtl" placeholder="Optional" min="1" max="255"
+                                            class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">VLAN ID</label>
+                                        <input type="number" id="replayVlan" placeholder="Optional" min="1" max="4094"
+                                            class="form-input">
+                                    </div>
+                                </div>
+                                <div class="form-row" style="margin-top: 1rem;">
                                     <label class="checkbox-label">
-                                        <input type="checkbox" id="planRewriteMacs"> Rewrite MACs (active L2 device in path)
+                                        <input type="checkbox" id="replayLoop"> Loop Replay
                                     </label>
-                                </div>
-                                <div class="form-group" style="display: flex; align-items: flex-end; gap: 0.5rem;">
-                                    <button id="suggestPlanBtn" class="btn btn-primary btn-sm">Suggest Plan</button>
-                                    <button id="applyPlanBtn" class="btn btn-accent btn-sm hidden">Apply to Job Form</button>
+                                    <input type="number" id="replayLoopCount" placeholder="Count (0 = ∞)" min="0"
+                                        class="form-input small hidden" style="width: 140px;">
                                 </div>
                             </div>
-                            <div id="planResult" class="plan-result hidden"></div>
-                        </div>
-                    </section>
+                        </section>
 
-                    <!-- Discovered Hosts -->
-                    <section class="section">
-                        <h2 class="section-header">Discovered Hosts</h2>
-                        <div class="panel">
-                            <table class="data-table compact">
-                                <thead>
-                                    <tr>
-                                        <th>Original IP</th>
-                                        <th>MAC</th>
-                                        <th>Label</th>
-                                        <th class="col-arrow"></th>
-                                        <th>New IP</th>
-                                        <th>New MAC</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="rewriteHostsBody"></tbody>
-                            </table>
+                        <div class="action-bar">
+                            <button id="downloadRewrittenBtn" class="btn btn-primary">↓ Download Rewritten PCAP</button>
+                            <button id="startReplayBtn" class="btn btn-accent">▶ Replay to Interface</button>
+                            <button id="stopReplayBtn" class="btn btn-danger hidden">■ Stop Replay</button>
                         </div>
-                    </section>
 
-                    <!-- Replay Settings -->
+                        <div id="replayStatus" class="panel status-panel hidden">
+                            <div class="status-header">
+                                <h3 class="section-header" style="margin:0;">Replay Status</h3>
+                                <span id="replayPps" class="pps-badge">0 pps</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="replayProgress" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <p id="replayMessage" class="status-message"></p>
+                            <div class="log-toggle">
+                                <button id="toggleLogBtn" class="btn btn-ghost btn-sm">▼ System Log</button>
+                            </div>
+                            <div id="replayLog" class="log-output hidden"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════════ TAB 3: GENERATOR ═══════════════ -->
+                <div id="pane-generator" class="tab-pane">
                     <section class="section">
-                        <h2 class="section-header">Replay Settings</h2>
+                        <h2 class="section-header">Generator Settings</h2>
                         <div class="panel">
                             <div class="form-grid cols-4">
                                 <div class="form-group">
+                                    <label class="form-label">Source IP</label>
+                                    <div class="input-with-picker">
+                                        <input type="text" id="genSrcIp" value="10.0.0.100" class="form-input">
+                                        <button class="addr-pick-btn" data-target="src" title="Pick from Address Book">&#x25BC;</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Destination IP</label>
+                                    <div class="input-with-picker">
+                                        <input type="text" id="genDstIp" value="10.0.0.1" class="form-input">
+                                        <button class="addr-pick-btn" data-target="dst" title="Pick from Address Book">&#x25BC;</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
                                     <label class="form-label">Interface</label>
-                                    <input type="text" id="replayInterface" placeholder="e.g., eth0" class="form-input">
+                                    <input type="text" id="genInterface" value="eth0" class="form-input">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Speed</label>
-                                    <select id="replaySpeed" class="form-input">
-                                        <option value="original">Original Timing</option>
-                                        <option value="fast">As Fast As Possible</option>
-                                    </select>
+                                    <label class="form-label">C2 Host</label>
+                                    <div class="input-with-picker">
+                                        <input type="text" id="genC2Host" value="185.100.87.42" class="form-input">
+                                        <button class="addr-pick-btn" data-target="c2" title="Pick from Address Book">&#x25BC;</button>
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label">TTL</label>
-                                    <input type="number" id="replayTtl" placeholder="Optional" min="1" max="255"
-                                        class="form-input">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">VLAN ID</label>
-                                    <input type="number" id="replayVlan" placeholder="Optional" min="1" max="4094"
-                                        class="form-input">
-                                </div>
-                            </div>
-                            <div class="form-row" style="margin-top: 1rem;">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="replayLoop"> Loop Replay
-                                </label>
-                                <input type="number" id="replayLoopCount" placeholder="Count (0 = ∞)" min="0"
-                                    class="form-input small hidden" style="width: 140px;">
                             </div>
                         </div>
                     </section>
 
-                    <!-- Action Buttons -->
-                    <div class="action-bar">
-                        <button id="downloadRewrittenBtn" class="btn btn-primary">
-                            ↓ Download Rewritten PCAP
-                        </button>
-                        <button id="startReplayBtn" class="btn btn-accent">
-                            ▶ Replay to Interface
-                        </button>
-                        <button id="stopReplayBtn" class="btn btn-danger hidden">
-                            ■ Stop Replay
-                        </button>
-                    </div>
+                    <section class="section">
+                        <h2 class="section-header">Protocol Templates</h2>
+                        <div class="card-grid">
+                            <div class="gen-card" data-type="protocol" data-proto="dns">
+                                <div class="gen-card-icon">🌐</div><h3>DNS</h3><p>Query/response pairs</p>
+                                <div class="gen-card-config">
+                                    <input type="text" placeholder="Domain" value="example.com" class="form-input small" data-field="domain">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                            <div class="gen-card" data-type="protocol" data-proto="ftp">
+                                <div class="gen-card-icon">📁</div><h3>FTP</h3><p>Login + file transfer</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Delay (s)" value="0.3" step="0.1" class="form-input small" data-field="delay">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                            <div class="gen-card" data-type="protocol" data-proto="smtp">
+                                <div class="gen-card-icon">✉️</div><h3>SMTP</h3><p>Email send sequence</p>
+                                <div class="gen-card-config">
+                                    <input type="text" placeholder="Domain" value="example.com" class="form-input small" data-field="domain">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                            <div class="gen-card" data-type="protocol" data-proto="snmp">
+                                <div class="gen-card-icon">📊</div><h3>SNMP</h3><p>GET/SET community exchanges</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                            <div class="gen-card" data-type="protocol" data-proto="ntp">
+                                <div class="gen-card-icon">🕐</div><h3>NTP</h3><p>Time sync requests</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                            <div class="gen-card" data-type="protocol" data-proto="http">
+                                <div class="gen-card-icon">🔗</div><h3>HTTP</h3><p>GET/POST with headers</p>
+                                <div class="gen-card-config">
+                                    <input type="text" placeholder="Domain" value="example.com" class="form-input small" data-field="domain">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                            <div class="gen-card" data-type="protocol" data-proto="icmp">
+                                <div class="gen-card-icon">📡</div><h3>ICMP</h3><p>Echo requests (ping)</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
+                            </div>
+                        </div>
+                    </section>
 
-                    <!-- Replay Status -->
-                    <div id="replayStatus" class="panel status-panel hidden">
+                    <section class="section">
+                        <h2 class="section-header">Adversary Simulations</h2>
+                        <div class="card-grid">
+                            <div class="gen-card adversary" data-type="adversary" data-sim="c2_beacon">
+                                <div class="gen-card-icon">🎯</div><h3>C2 Beaconing</h3><p>Periodic HTTPS callbacks</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="50" class="form-input small" data-field="count">
+                                    <input type="number" placeholder="Interval (s)" value="5" step="0.5" class="form-input small" data-field="delay">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="dns_exfil">
+                                <div class="gen-card-icon">🔓</div><h3>DNS Exfiltration</h3><p>Data encoded in queries</p>
+                                <div class="gen-card-config">
+                                    <input type="text" placeholder="Exfil Domain" value="evil-c2.xyz" class="form-input small" data-field="domain">
+                                    <input type="number" placeholder="Count" value="30" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="port_scan">
+                                <div class="gen-card-icon">🔍</div><h3>Port Scanning</h3><p>SYN scan common ports</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Delay (s)" value="0.05" step="0.01" class="form-input small" data-field="delay">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="lateral_movement">
+                                <div class="gen-card-icon">🕸️</div><h3>Lateral Movement</h3><p>SMB/WinRM/RDP across subnet</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Delay (s)" value="0.02" step="0.01" class="form-input small" data-field="delay">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="http_exfil">
+                                <div class="gen-card-icon">📤</div><h3>HTTP Exfiltration</h3><p>Large POST to external IPs</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="dga">
+                                <div class="gen-card-icon">🎲</div><h3>DGA Traffic</h3><p>Algorithmically generated domains</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="50" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="icmp_tunnel">
+                                <div class="gen-card-icon">🧊</div><h3>ICMP Tunneling</h3><p>Data exfil via oversized ICMP</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="40" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="llmnr_poison">
+                                <div class="gen-card-icon">☠️</div><h3>LLMNR/NBT-NS Poison</h3><p>Spoofed name resolution responses</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="30" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="arp_spoof">
+                                <div class="gen-card-icon">🔀</div><h3>ARP Spoofing</h3><p>Gratuitous ARP cache poisoning</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="30" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="dcsync">
+                                <div class="gen-card-icon">🏛️</div><h3>DCSync</h3><p>AD replication from non-DC host</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="5" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="kerberoast">
+                                <div class="gen-card-icon">🎫</div><h3>Kerberoasting</h3><p>Burst TGS-REQ for service SPNs</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="20" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                            <div class="gen-card adversary" data-type="adversary" data-sim="ntlm_relay">
+                                <div class="gen-card-icon">🔄</div><h3>NTLM Relay</h3><p>SMB auth intercept and relay</p>
+                                <div class="gen-card-config">
+                                    <input type="number" placeholder="Count" value="10" class="form-input small" data-field="count">
+                                </div>
+                                <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div id="genStatus" class="panel status-panel hidden">
                         <div class="status-header">
-                            <h3 class="section-header">Replay Status</h3>
-                            <span id="replayPps" class="pps-badge">0 pps</span>
+                            <h3 class="section-header" style="margin:0;">Generator Status</h3>
+                            <span id="genPps" class="pps-badge">0 pps</span>
                         </div>
                         <div class="progress-bar">
-                            <div id="replayProgress" class="progress-fill" style="width: 0%"></div>
+                            <div id="genProgress" class="progress-fill" style="width: 0%"></div>
                         </div>
-                        <p id="replayMessage" class="status-message"></p>
-                        <div class="log-toggle">
-                            <button id="toggleLogBtn" class="btn btn-ghost">▼ System Log</button>
-                        </div>
-                        <div id="replayLog" class="log-output hidden"></div>
+                        <p id="genMessage" class="status-message"></p>
+                        <button id="genStopBtn" class="btn btn-danger btn-sm" style="margin-top: 0.5rem;">■ Stop</button>
                     </div>
                 </div>
-            </div>
 
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- TAB 3: TRAFFIC GENERATOR                                      -->
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div id="pane-generator" class="tab-pane">
-                <!-- Common Settings -->
-                <section class="section">
-                    <h2 class="section-header">Generator Settings</h2>
-                    <div class="panel">
-                        <div class="form-grid cols-4">
-                            <div class="form-group">
-                                <label class="form-label">Source IP</label>
-                                <div class="input-with-picker">
-                                    <input type="text" id="genSrcIp" value="10.0.0.100" class="form-input">
-                                    <button class="addr-pick-btn" data-target="src"
-                                        title="Pick from Address Book">&#x25BC;</button>
+                <!-- ═══════════════ TAB 4: ADDRESS BOOK ═══════════════ -->
+                <div id="pane-addressbook" class="tab-pane">
+                    <section class="section">
+                        <h2 class="section-header">Address Book</h2>
+                        <div class="panel">
+                            <div class="form-grid cols-4" style="margin-bottom: 1rem;">
+                                <div class="form-group">
+                                    <label class="form-label">Name</label>
+                                    <input type="text" id="addrName" placeholder="e.g., Victim Host" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">IP Address</label>
+                                    <input type="text" id="addrIp" placeholder="10.0.0.100" class="form-input">
+                                    <span class="field-error" id="addrIpError"></span>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">MAC Address</label>
+                                    <input type="text" id="addrMac" placeholder="aa:bb:cc:dd:ee:ff" class="form-input">
+                                    <span class="field-error" id="addrMacError"></span>
+                                </div>
+                                <div class="form-group" style="display: flex; align-items: flex-end;">
+                                    <button id="addAddressBtn" class="btn btn-primary btn-sm">+ Save</button>
                                 </div>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">Destination IP</label>
-                                <div class="input-with-picker">
-                                    <input type="text" id="genDstIp" value="10.0.0.1" class="form-input">
-                                    <button class="addr-pick-btn" data-target="dst"
-                                        title="Pick from Address Book">&#x25BC;</button>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Interface</label>
-                                <input type="text" id="genInterface" value="eth0" class="form-input">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">C2 Host</label>
-                                <div class="input-with-picker">
-                                    <input type="text" id="genC2Host" value="185.100.87.42" class="form-input">
-                                    <button class="addr-pick-btn" data-target="c2"
-                                        title="Pick from Address Book">&#x25BC;</button>
-                                </div>
+                            <div id="addressList" class="address-list">
+                                <div class="placeholder">No saved addresses yet.</div>
                             </div>
                         </div>
-                    </div>
-                </section>
-
-
-                <!-- Protocol Templates -->
-                <section class="section">
-                    <h2 class="section-header">Protocol Templates</h2>
-                    <div class="card-grid">
-                        <div class="gen-card" data-type="protocol" data-proto="dns">
-                            <div class="gen-card-icon">🌐</div>
-                            <h3>DNS</h3>
-                            <p>Query/response pairs</p>
-                            <div class="gen-card-config">
-                                <input type="text" placeholder="Domain" value="example.com" class="form-input small"
-                                    data-field="domain">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-
-                        <div class="gen-card" data-type="protocol" data-proto="ftp">
-                            <div class="gen-card-icon">📁</div>
-                            <h3>FTP</h3>
-                            <p>Login + file transfer</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Delay (s)" value="0.3" step="0.1"
-                                    class="form-input small" data-field="delay">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-
-                        <div class="gen-card" data-type="protocol" data-proto="smtp">
-                            <div class="gen-card-icon">✉️</div>
-                            <h3>SMTP</h3>
-                            <p>Email send sequence</p>
-                            <div class="gen-card-config">
-                                <input type="text" placeholder="Domain" value="example.com" class="form-input small"
-                                    data-field="domain">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-
-                        <div class="gen-card" data-type="protocol" data-proto="snmp">
-                            <div class="gen-card-icon">📊</div>
-                            <h3>SNMP</h3>
-                            <p>GET/SET community exchanges</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-
-                        <div class="gen-card" data-type="protocol" data-proto="ntp">
-                            <div class="gen-card-icon">🕐</div>
-                            <h3>NTP</h3>
-                            <p>Time sync requests</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-
-                        <div class="gen-card" data-type="protocol" data-proto="http">
-                            <div class="gen-card-icon">🔗</div>
-                            <h3>HTTP</h3>
-                            <p>GET/POST with headers</p>
-                            <div class="gen-card-config">
-                                <input type="text" placeholder="Domain" value="example.com" class="form-input small"
-                                    data-field="domain">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-
-                        <div class="gen-card" data-type="protocol" data-proto="icmp">
-                            <div class="gen-card-icon">📡</div>
-                            <h3>ICMP</h3>
-                            <p>Echo requests (ping)</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-primary btn-sm gen-run-btn">Generate</button>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Adversary Simulations -->
-                <section class="section">
-                    <h2 class="section-header">Adversary Simulations</h2>
-                    <div class="card-grid">
-                        <div class="gen-card adversary" data-type="adversary" data-sim="c2_beacon">
-                            <div class="gen-card-icon">🎯</div>
-                            <h3>C2 Beaconing</h3>
-                            <p>Periodic HTTPS callbacks</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="50" class="form-input small"
-                                    data-field="count">
-                                <input type="number" placeholder="Interval (s)" value="5" step="0.5"
-                                    class="form-input small" data-field="delay">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="dns_exfil">
-                            <div class="gen-card-icon">🔓</div>
-                            <h3>DNS Exfiltration</h3>
-                            <p>Data encoded in queries</p>
-                            <div class="gen-card-config">
-                                <input type="text" placeholder="Exfil Domain" value="evil-c2.xyz"
-                                    class="form-input small" data-field="domain">
-                                <input type="number" placeholder="Count" value="30" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="port_scan">
-                            <div class="gen-card-icon">🔍</div>
-                            <h3>Port Scanning</h3>
-                            <p>SYN scan common ports</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Delay (s)" value="0.05" step="0.01"
-                                    class="form-input small" data-field="delay">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="lateral_movement">
-                            <div class="gen-card-icon">🕸️</div>
-                            <h3>Lateral Movement</h3>
-                            <p>SMB/WinRM/RDP across subnet</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Delay (s)" value="0.02" step="0.01"
-                                    class="form-input small" data-field="delay">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="http_exfil">
-                            <div class="gen-card-icon">📤</div>
-                            <h3>HTTP Exfiltration</h3>
-                            <p>Large POST to external IPs</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="dga">
-                            <div class="gen-card-icon">🎲</div>
-                            <h3>DGA Traffic</h3>
-                            <p>Algorithmically generated domains</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="50" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="icmp_tunnel">
-                            <div class="gen-card-icon">🧊</div>
-                            <h3>ICMP Tunneling</h3>
-                            <p>Data exfil via oversized ICMP</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="40" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="llmnr_poison">
-                            <div class="gen-card-icon">☠️</div>
-                            <h3>LLMNR/NBT-NS Poison</h3>
-                            <p>Spoofed name resolution responses</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="30" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="arp_spoof">
-                            <div class="gen-card-icon">🔀</div>
-                            <h3>ARP Spoofing</h3>
-                            <p>Gratuitous ARP cache poisoning</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="30" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="dcsync">
-                            <div class="gen-card-icon">🏛️</div>
-                            <h3>DCSync</h3>
-                            <p>AD replication from non-DC host</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="5" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="kerberoast">
-                            <div class="gen-card-icon">🎫</div>
-                            <h3>Kerberoasting</h3>
-                            <p>Burst TGS-REQ for service SPNs</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="20" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-
-                        <div class="gen-card adversary" data-type="adversary" data-sim="ntlm_relay">
-                            <div class="gen-card-icon">🔄</div>
-                            <h3>NTLM Relay</h3>
-                            <p>SMB auth intercept and relay</p>
-                            <div class="gen-card-config">
-                                <input type="number" placeholder="Count" value="10" class="form-input small"
-                                    data-field="count">
-                            </div>
-                            <button class="btn btn-danger btn-sm gen-run-btn">Execute</button>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Generator Status -->
-                <div id="genStatus" class="panel status-panel hidden">
-                    <div class="status-header">
-                        <h3 class="section-header">Generator Status</h3>
-                        <span id="genPps" class="pps-badge">0 pps</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div id="genProgress" class="progress-fill" style="width: 0%"></div>
-                    </div>
-                    <p id="genMessage" class="status-message"></p>
-                    <button id="genStopBtn" class="btn btn-danger" style="margin-top: 0.5rem;">■ Stop</button>
+                    </section>
                 </div>
-            </div>
 
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- TAB 4: ADDRESS BOOK                                           -->
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div id="pane-addressbook" class="tab-pane">
-                <section class="section">
-                    <h2 class="section-header">Address Book</h2>
-                    <div class="panel">
-                        <div class="form-grid cols-4" style="margin-bottom: 1rem;">
-                            <div class="form-group">
-                                <label class="form-label">Name</label>
-                                <input type="text" id="addrName" placeholder="e.g., Victim Host" class="form-input">
+                <!-- ═══════════════ TAB 5: PROFILES ═══════════════ -->
+                <div id="pane-profiles" class="tab-pane">
+                    <section class="section">
+                        <h2 class="section-header">Saved Profiles</h2>
+                        <div class="panel">
+                            <div class="form-row" style="margin-bottom: 1rem;">
+                                <input type="text" id="profileName" placeholder="Profile name..." class="form-input" style="flex: 1;">
+                                <button id="saveProfileBtn" class="btn btn-primary">Save Current</button>
+                                <button id="importProfileBtn" class="btn btn-ghost">Import JSON</button>
+                                <input type="file" id="importProfileFile" class="hidden" accept=".json">
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">IP Address</label>
-                                <input type="text" id="addrIp" placeholder="10.0.0.100" class="form-input">
-                                <span class="field-error" id="addrIpError"></span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">MAC Address</label>
-                                <input type="text" id="addrMac" placeholder="aa:bb:cc:dd:ee:ff" class="form-input">
-                                <span class="field-error" id="addrMacError"></span>
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button id="addAddressBtn" class="btn btn-primary btn-sm">+ Save</button>
+                            <div id="profileList" class="profile-list">
+                                <div class="placeholder">No saved profiles yet.</div>
                             </div>
                         </div>
-                        <div id="addressList" class="address-list">
-                            <div class="placeholder">No saved addresses yet.</div>
-                        </div>
-                    </div>
-                </section>
-            </div>
+                    </section>
+                </div>
 
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- TAB 5: PROFILES                                               -->
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div id="pane-profiles" class="tab-pane">
-                <section class="section">
-                    <h2 class="section-header">Saved Profiles</h2>
-                    <div class="panel">
-                        <div class="form-row" style="margin-bottom: 1rem;">
-                            <input type="text" id="profileName" placeholder="Profile name..." class="form-input"
-                                style="flex: 1;">
-                            <button id="saveProfileBtn" class="btn btn-primary">Save Current</button>
-                            <button id="importProfileBtn" class="btn btn-ghost">Import JSON</button>
-                            <input type="file" id="importProfileFile" class="hidden" accept=".json">
+                <!-- ═══════════════ TAB 6: SETTINGS ═══════════════ -->
+                <div id="pane-settings" class="tab-pane">
+                    <section class="section">
+                        <h2 class="section-header">ExtraHop Appliance</h2>
+                        <div class="panel" style="max-width: 640px;">
+                            <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label class="form-label">Reveal(x) base URL</label>
+                                    <input type="text" id="settingsBaseUrl" placeholder="https://lab-sensor1.example" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">API key ID</label>
+                                    <input type="text" id="settingsApiKey" placeholder="key identifier" class="form-input">
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-top: 1rem;">
+                                <label class="form-label">Internal networks — one CIDR per line</label>
+                                <textarea id="settingsInternalNets" rows="4" class="form-input"
+                                    placeholder="10.20.0.0/16&#10;10.21.0.0/16"></textarea>
+                                <span class="field-error" id="settingsNetError"></span>
+                            </div>
+                            <p class="status-text" style="margin: 4px 0 14px;">The planner keeps your lab range inside these so ExtraHop classifies the hosts as internal.</p>
+                            <div class="form-row">
+                                <button id="saveSettingsBtn" class="btn btn-primary">Save Settings</button>
+                                <span id="settingsStatus" class="status-text"></span>
+                            </div>
                         </div>
-                        <div id="profileList" class="profile-list">
-                            <div class="placeholder">No saved profiles yet.</div>
-                        </div>
-                    </div>
-                </section>
-            </div>
+                    </section>
+                </div>
 
+            </div><!-- /.content-scroll -->
         </div><!-- /.main-content -->
     </div><!-- /.app-layout -->
 

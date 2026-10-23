@@ -9,6 +9,7 @@ venv/
 uploads/
 *.db
 smoke_capture.pcap
+data/settings.json
 
 # OS
 .DS_Store
