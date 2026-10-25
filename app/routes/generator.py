@@ -47,6 +47,7 @@ def generate_protocol():
             'delay': float(data.get('delay', 0.5)),
             'domain': data.get('domain', 'example.com'),
             'payload': data.get('payload', ''),
+            'ipjitter': float(data.get('ipjitter', 0) or 0),
         }
 
         thread = threading.Thread(
@@ -99,6 +100,7 @@ def generate_adversary():
             'duration': int(data.get('duration', 60)),
             'duration_min': float(data.get('duration_min', 0) or 0),
             'jitter': float(data.get('jitter', 0) or 0),
+            'ipjitter': float(data.get('ipjitter', 0) or 0),
         }
 
         # Record the run so the ExtraHop detection loop can correlate it later.
@@ -144,6 +146,7 @@ def generate_campaign():
             'count': int(data.get('count', 30)),
             'delay': float(data.get('delay', 0.1)),
             'domain': data.get('domain', 'evil-c2.xyz'),
+            'ipjitter': float(data.get('ipjitter', 0) or 0),
         }
         scenarios = data.get('scenarios')
         planned = len(campaign.campaign_plan(settings, scenarios))

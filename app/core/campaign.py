@@ -43,6 +43,7 @@ def campaign_plan(settings, scenarios=None):
             'count': int(settings.get('count', 30)),
             'delay': float(settings.get('delay', 0.1)),
             'domain': settings.get('domain', 'evil-c2.xyz'),
+            'ipjitter': float(settings.get('ipjitter', 0) or 0),
         })
     return plan
 

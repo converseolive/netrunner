@@ -11,6 +11,7 @@ from scapy.all import (
     sendp, get_if_hwaddr, RandShort
 )
 from app.core.engine import active_task_status, log_message
+from app.core.beacon import jittered_delay
 
 
 def generate(params):
@@ -58,6 +59,7 @@ def _send_packets(packets, params):
     """Send a list of packets with delay and status tracking."""
     iface = params['interface']
     delay = params.get('delay', 0.5)
+    jitter = params.get('ipjitter', 0)
     total = len(packets)
     active_task_status['total'] = total
 
@@ -80,7 +82,7 @@ def _send_packets(packets, params):
             pps_start = time.time()
 
         if delay > 0:
-            time.sleep(delay)
+            time.sleep(jittered_delay(delay, jitter))
 
 
 # ── DNS ──────────────────────────────────────────────────────────────────────

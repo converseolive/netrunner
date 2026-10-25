@@ -4,7 +4,7 @@ import random
 import unittest
 from unittest import mock
 
-from app.core.beacon import beacon_schedule
+from app.core.beacon import beacon_schedule, jittered_delay
 
 
 class ScheduleTests(unittest.TestCase):
@@ -33,6 +33,30 @@ class ScheduleTests(unittest.TestCase):
         a = beacon_schedule(60, 5, 30, rng=random.Random(99))
         b = beacon_schedule(60, 5, 30, rng=random.Random(99))
         self.assertEqual(a, b)
+
+
+class JitteredDelayTests(unittest.TestCase):
+    def test_zero_jitter_returns_base(self):
+        self.assertEqual(jittered_delay(0.5, 0), 0.5)
+
+    def test_zero_base_returns_zero(self):
+        self.assertEqual(jittered_delay(0, 50), 0.0)
+
+    def test_within_bounds(self):
+        rng = random.Random(3)
+        for _ in range(50):
+            d = jittered_delay(1.0, 40, rng=rng)
+            self.assertTrue(0.6 <= d <= 1.4)
+
+    def test_deterministic_with_seed(self):
+        a = jittered_delay(2.0, 30, rng=random.Random(5))
+        b = jittered_delay(2.0, 30, rng=random.Random(5))
+        self.assertEqual(a, b)
+
+    def test_never_negative(self):
+        rng = random.Random(0)
+        for _ in range(50):
+            self.assertGreaterEqual(jittered_delay(0.1, 95, rng=rng), 0.0)
 
 
 class BeaconSimTests(unittest.TestCase):

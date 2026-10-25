@@ -16,6 +16,7 @@ from scapy.all import (
     sendp, get_if_hwaddr, RandShort
 )
 from app.core.engine import active_task_status, log_message
+from app.core.beacon import jittered_delay
 
 
 def run_one(params):
@@ -70,6 +71,7 @@ def _base_packet(params):
 def _send_with_tracking(packets, params, delay_override=None):
     iface = params['interface']
     delay = delay_override if delay_override is not None else params.get('delay', 1.0)
+    jitter = params.get('ipjitter', 0)
     total = len(packets)
     active_task_status['total'] = total
 
@@ -92,7 +94,7 @@ def _send_with_tracking(packets, params, delay_override=None):
             pps_start = time.time()
 
         if delay > 0:
-            time.sleep(delay)
+            time.sleep(jittered_delay(delay, jitter))
 
 
 # ── TCP Session Helpers ─────────────────────────────────────────────────────

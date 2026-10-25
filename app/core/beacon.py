@@ -34,3 +34,19 @@ def beacon_schedule(duration_s, interval_s, jitter_pct, rng=None):
         gaps.append(gap)
         elapsed += gap
     return gaps
+
+
+def jittered_delay(base_delay, jitter_pct, rng=None):
+    """
+    Return `base_delay` varied by +/- `jitter_pct` (0-95), floored at 0.
+
+    Used between packets so generated traffic doesn't have robotically fixed
+    timing. jitter_pct of 0 returns the base delay unchanged.
+    """
+    if base_delay <= 0:
+        return 0.0
+    j = max(0.0, min(float(jitter_pct), 95.0)) / 100.0
+    if not j:
+        return base_delay
+    rng = rng or _random
+    return max(0.0, base_delay * (1 + rng.uniform(-j, j)))

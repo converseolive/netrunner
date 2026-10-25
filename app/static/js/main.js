@@ -817,6 +817,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 c2_host: document.getElementById('genC2Host').value,
                 src_mac: srcIpEl.dataset.mac || null,
                 dst_mac: dstIpEl.dataset.mac || null,
+                ipjitter: document.getElementById('genJitter').value,
             };
 
             // Gather card-specific settings
@@ -866,6 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
             c2_host: document.getElementById('genC2Host').value,
             src_mac: srcIpEl.dataset.mac || null,
             dst_mac: dstIpEl.dataset.mac || null,
+            ipjitter: document.getElementById('genJitter').value,
         };
         try {
             const resp = await fetch('/generate/campaign', {
