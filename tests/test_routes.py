@@ -12,7 +12,7 @@ import shutil
 import tempfile
 import unittest
 
-from scapy.all import Ether, IP, TCP, UDP, wrpcap
+from scapy.all import Ether, IP, TCP, UDP, ARP, wrpcap
 
 from app import create_app
 from app.core import settings, runs, profiles, addresses
@@ -85,6 +85,31 @@ class IndexAndAnalyzeTests(RouteTestBase):
         # the capture's two internal hosts should be present
         self.assertEqual(data["addressing"]["internal_count"], 2)
         self.assertEqual(data["audit"]["summary"].get("rewrite", 0) >= 2, True)
+
+    def test_analyze_capture_starting_with_arp(self):
+        # Regression: a capture whose first packet has no IP layer (ARP) used to
+        # raise UnboundLocalError on src_ip.
+        pkts = [
+            Ether(src="aa:aa:aa:00:00:10", dst="ff:ff:ff:ff:ff:ff")
+            / ARP(op=1, psrc="192.168.1.1", pdst="192.168.1.10"),
+            Ether(src="aa:aa:aa:00:00:20", dst="aa:aa:aa:00:00:10")
+            / ARP(op=2, psrc="192.168.1.10", pdst="192.168.1.1", hwsrc="aa:aa:aa:00:00:20"),
+            Ether(src="aa:aa:aa:00:00:10", dst="aa:aa:aa:00:00:20")
+            / IP(src="192.168.1.10", dst="8.8.8.8") / TCP(dport=443, flags="S"),
+        ]
+        tmp = tempfile.NamedTemporaryFile(suffix=".pcap", delete=False)
+        tmp.close()
+        wrpcap(tmp.name, pkts)
+        with open(tmp.name, "rb") as f:
+            data = f.read()
+        os.remove(tmp.name)
+        resp = self.client.post(
+            "/analyze_pcap",
+            data={"pcapFile": (io.BytesIO(data), "arp.pcap")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreaterEqual(len(resp.get_json()["timeline"]), 1)
 
     def test_analyze_missing_file_is_400(self):
         resp = self.client.post("/analyze_pcap", data={}, content_type="multipart/form-data")

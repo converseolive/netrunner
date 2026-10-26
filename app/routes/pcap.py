@@ -74,6 +74,7 @@ def analyze_pcap():
                 has_ether = packet.haslayer(Ether)
                 pkt_len = len(packet)
                 ts = float(packet.time)
+                src_ip = dst_ip = None  # bound for every packet, incl. non-IP
 
                 # Determine protocol
                 proto = packet.name
@@ -161,16 +162,19 @@ def analyze_pcap():
                         # op 2 = reply; broadcast/unsolicited replies are the tell
                         if int(a_layer.op) == 2:
                             arp['gratuitous_by_mac'][hwsrc] += 1
+                    # Fall back to ARP addresses for the timeline when there's no IP.
+                    if src_ip is None:
+                        src_ip, dst_ip = psrc, a_layer.pdst
 
-                    # Timeline events (sampled for performance)
-                    if i % max(1, i // 500 + 1) == 0 or i < 200:
-                        timeline.append({
-                            'ts': ts,
-                            'src': src_ip,
-                            'dst': dst_ip,
-                            'proto': proto,
-                            'len': pkt_len
-                        })
+                # Timeline events (sampled; any packet that has an address)
+                if src_ip is not None and (i % max(1, i // 500 + 1) == 0 or i < 200):
+                    timeline.append({
+                        'ts': ts,
+                        'src': src_ip,
+                        'dst': dst_ip,
+                        'proto': proto,
+                        'len': pkt_len
+                    })
 
                 if has_ip and has_ether:
                     ip_to_mac_map[packet[IP].src] = packet[Ether].src
