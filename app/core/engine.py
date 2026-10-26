@@ -8,25 +8,139 @@ import threading
 from collections import deque
 from scapy.all import PcapReader, sendp, get_if_hwaddr, Ether, IP, TCP, UDP, ICMP, Raw, Dot1Q
 
-# ── Global Task Status ───────────────────────────────────────────────────────
+# ── Job manager ──────────────────────────────────────────────────────────────
+# Each task (replay / generate / campaign) runs with its own status, so several
+# can run concurrently without clobbering one another. Task code keeps using the
+# module-level `active_task_status`; a thread-local proxy routes each thread's
+# reads and writes to its own job's status dict (and to a shared fallback for any
+# thread with no bound job).
 
-active_task_status = {
-    'is_running': False,
-    'task_type': None,
-    'message': 'Ready.',
-    'progress': 0,
-    'total': 0,
-    'loop_count': 0,
-    'packets_per_second': 0,
-    'logs': deque(maxlen=200),
-    'error': None
-}
+MAX_CONCURRENT_JOBS = 10
+
+_jobs = {}
+_jobs_lock = threading.Lock()
+_tls = threading.local()
+
+
+def _new_status():
+    return {
+        'is_running': False, 'task_type': None, 'label': '', 'message': 'Ready.',
+        'progress': 0, 'total': 0, 'loop_count': 0, 'packets_per_second': 0,
+        'logs': deque(maxlen=200), 'error': None,
+        'id': None, 'started_at': None, 'ended_at': None,
+    }
+
+
+_global_status = _new_status()  # fallback for threads with no bound job
+
+
+class _StatusProxy:
+    """Route active_task_status access to the calling thread's job, else global."""
+    def _t(self):
+        return getattr(_tls, 'status', _global_status)
+
+    def __getitem__(self, k):
+        return self._t()[k]
+
+    def __setitem__(self, k, v):
+        self._t()[k] = v
+
+    def __contains__(self, k):
+        return k in self._t()
+
+    def get(self, k, default=None):
+        return self._t().get(k, default)
+
+
+active_task_status = _StatusProxy()
 
 
 def log_message(msg):
-    """Log to console and web UI."""
+    """Log to the console and the calling thread's job log."""
     print(msg)
     active_task_status['logs'].append(f'[{time.strftime("%H:%M:%S")}] {msg}')
+
+
+def running_job_count():
+    with _jobs_lock:
+        return sum(1 for s in _jobs.values() if s.get('is_running'))
+
+
+def new_job(task_type, label=''):
+    jid = f"job-{int(time.time() * 1000)}-{len(_jobs)}"
+    st = _new_status()
+    st.update({'id': jid, 'task_type': task_type, 'label': label,
+               'is_running': True, 'message': 'Starting...', 'started_at': time.time()})
+    with _jobs_lock:
+        _jobs[jid] = st
+    return jid
+
+
+def bind_job(jid):
+    """Bind the calling thread's status to job `jid`."""
+    _tls.status = _jobs[jid]
+
+
+def run_job(task_type, target, args=(), label=''):
+    """Start `target` on a daemon thread bound to a fresh job; return its id."""
+    jid = new_job(task_type, label)
+
+    def _runner():
+        bind_job(jid)
+        try:
+            target(*args)
+        except Exception as e:  # noqa: BLE001 - record on the job, keep others alive
+            st = _jobs.get(jid)
+            if st:
+                st['error'] = str(e)
+            log_message(f"[!!!] Task error: {e}")
+        finally:
+            st = _jobs.get(jid)
+            if st:
+                st['is_running'] = False
+                st['packets_per_second'] = 0
+                st['ended_at'] = time.time()
+
+    threading.Thread(target=_runner, daemon=True).start()
+    return jid
+
+
+def get_job(jid):
+    return _jobs.get(jid)
+
+
+def stop_job(jid):
+    st = _jobs.get(jid)
+    if st:
+        st['is_running'] = False
+        return True
+    return False
+
+
+def stop_all_jobs():
+    with _jobs_lock:
+        for st in _jobs.values():
+            st['is_running'] = False
+
+
+def list_jobs(limit=30):
+    with _jobs_lock:
+        jobs = sorted(_jobs.values(), key=lambda s: s.get('started_at') or 0,
+                      reverse=True)[:limit]
+    return [{
+        'id': s['id'], 'task_type': s['task_type'], 'label': s['label'],
+        'is_running': s['is_running'], 'progress': s['progress'], 'total': s['total'],
+        'packets_per_second': s['packets_per_second'], 'message': s['message'],
+        'loop_count': s['loop_count'], 'error': s['error'],
+        'started_at': s['started_at'], 'ended_at': s['ended_at'],
+        'logs': list(s['logs'])[-40:],
+    } for s in jobs]
+
+
+def clear_finished_jobs():
+    with _jobs_lock:
+        for jid in [j for j, s in _jobs.items() if not s.get('is_running')]:
+            del _jobs[jid]
 
 
 # ── Run registry ─────────────────────────────────────────────────────────────

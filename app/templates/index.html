@@ -301,22 +301,6 @@
                         <div class="action-bar">
                             <button id="downloadRewrittenBtn" class="btn btn-primary">↓ Download Rewritten PCAP</button>
                             <button id="startReplayBtn" class="btn btn-accent">▶ Replay to Interface</button>
-                            <button id="stopReplayBtn" class="btn btn-danger hidden">■ Stop Replay</button>
-                        </div>
-
-                        <div id="replayStatus" class="panel status-panel hidden">
-                            <div class="status-header">
-                                <h3 class="section-header" style="margin:0;">Replay Status</h3>
-                                <span id="replayPps" class="pps-badge">0 pps</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div id="replayProgress" class="progress-fill" style="width: 0%"></div>
-                            </div>
-                            <p id="replayMessage" class="status-message"></p>
-                            <div class="log-toggle">
-                                <button id="toggleLogBtn" class="btn btn-ghost btn-sm">▼ System Log</button>
-                            </div>
-                            <div id="replayLog" class="log-output hidden"></div>
                         </div>
                     </div>
                 </div>
@@ -521,17 +505,6 @@
                         </div>
                     </section>
 
-                    <div id="genStatus" class="panel status-panel hidden">
-                        <div class="status-header">
-                            <h3 class="section-header" style="margin:0;">Generator Status</h3>
-                            <span id="genPps" class="pps-badge">0 pps</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div id="genProgress" class="progress-fill" style="width: 0%"></div>
-                        </div>
-                        <p id="genMessage" class="status-message"></p>
-                        <button id="genStopBtn" class="btn btn-danger btn-sm" style="margin-top: 0.5rem;">■ Stop</button>
-                    </div>
                 </div>
 
                 <!-- ═══════════════ DETECTIONS ═══════════════ -->
@@ -669,6 +642,20 @@
                             </div>
                         </div>
                     </section>
+                </div>
+
+                <!-- ═══════════════ ACTIVE JOBS (concurrent tasks) ═══════════════ -->
+                <div id="jobsSection" class="section hidden" style="margin-top: 22px;">
+                    <div class="panel">
+                        <div class="status-header">
+                            <h3 class="section-header" style="margin:0;">Active Jobs</h3>
+                            <div style="display:flex; gap:8px;">
+                                <button id="clearJobsBtn" class="btn btn-ghost btn-sm">Clear finished</button>
+                                <button id="stopAllJobsBtn" class="btn btn-danger btn-sm">Stop all</button>
+                            </div>
+                        </div>
+                        <div id="jobsList" class="jobs-list"></div>
+                    </div>
                 </div>
 
             </div><!-- /.content-scroll -->

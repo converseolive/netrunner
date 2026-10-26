@@ -696,21 +696,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════
 
     const startReplayBtn = document.getElementById('startReplayBtn');
-    const stopReplayBtn = document.getElementById('stopReplayBtn');
-    const replayStatus = document.getElementById('replayStatus');
-    const replayProgress = document.getElementById('replayProgress');
-    const replayMessage = document.getElementById('replayMessage');
-    const replayPps = document.getElementById('replayPps');
-    const replayLog = document.getElementById('replayLog');
     const loopCheckbox = document.getElementById('replayLoop');
     const loopCountInput = document.getElementById('replayLoopCount');
 
     loopCheckbox.addEventListener('change', () => {
         loopCountInput.classList.toggle('hidden', !loopCheckbox.checked);
-    });
-
-    document.getElementById('toggleLogBtn').addEventListener('click', () => {
-        replayLog.classList.toggle('hidden');
     });
 
     startReplayBtn.addEventListener('click', async () => {
@@ -735,70 +725,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     participant_ips: (analysisData?.endpoints || []).slice(0, 20).map(e => e.ip)
                 })
             });
-
             const data = await resp.json();
             if (data.error) { alert(data.error); return; }
-
-            // Show status
-            replayStatus.classList.remove('hidden');
-            startReplayBtn.classList.add('hidden');
-            stopReplayBtn.classList.remove('hidden');
-
-            // Start SSE
-            startReplaySSE();
-
+            showJobs();
         } catch (err) {
             alert(`Error: ${err.message}`);
         }
     });
 
-    stopReplayBtn.addEventListener('click', async () => {
-        await fetch('/replay/stop', { method: 'POST' });
-    });
-
-    function startReplaySSE() {
-        if (statusEventSource) statusEventSource.close();
-        statusEventSource = new EventSource('/replay/status');
-
-        statusEventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-
-            replayMessage.textContent = data.message;
-            replayPps.textContent = `${data.pps} pps`;
-
-            if (data.total > 0) {
-                const pct = Math.round((data.progress / data.total) * 100);
-                replayProgress.style.width = `${pct}%`;
-            }
-
-            // Update log
-            replayLog.innerHTML = data.logs.map(l => `<div class="log-line">${escHtml(l)}</div>`).join('');
-            replayLog.scrollTop = replayLog.scrollHeight;
-
-            if (!data.is_running) {
-                statusEventSource.close();
-                statusEventSource = null;
-                startReplayBtn.classList.remove('hidden');
-                stopReplayBtn.classList.add('hidden');
-            }
-        };
-
-        statusEventSource.onerror = () => {
-            statusEventSource.close();
-            statusEventSource = null;
-            startReplayBtn.classList.remove('hidden');
-            stopReplayBtn.classList.add('hidden');
-        };
-    }
-
     // ═══════════════════════════════════════════════════════════════════
     // TRAFFIC GENERATOR
     // ═══════════════════════════════════════════════════════════════════
-
-    const genStatus = document.getElementById('genStatus');
-    const genProgress = document.getElementById('genProgress');
-    const genMessage = document.getElementById('genMessage');
-    const genPps = document.getElementById('genPps');
 
     document.querySelectorAll('.gen-run-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -807,7 +744,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const isAdversary = type === 'adversary';
             const protoOrSim = isAdversary ? card.dataset.sim : card.dataset.proto;
 
-            // Gather common settings
             const srcIpEl = document.getElementById('genSrcIp');
             const dstIpEl = document.getElementById('genDstIp');
             const payload = {
@@ -819,41 +755,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 dst_mac: dstIpEl.dataset.mac || null,
                 ipjitter: document.getElementById('genJitter').value,
             };
-
-            // Gather card-specific settings
             card.querySelectorAll('[data-field]').forEach(inp => {
                 payload[inp.dataset.field] = inp.value;
             });
-
-            if (isAdversary) {
-                payload.simulation = protoOrSim;
-            } else {
-                payload.protocol = protoOrSim;
-            }
-
+            if (isAdversary) { payload.simulation = protoOrSim; } else { payload.protocol = protoOrSim; }
             const url = isAdversary ? '/generate/adversary' : '/generate/protocol';
 
             try {
                 const resp = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
                 const data = await resp.json();
                 if (data.error) { alert(data.error); return; }
-
-                genStatus.classList.remove('hidden');
-                startGenSSE();
-
-            } catch (err) {
-                alert(`Error: ${err.message}`);
-            }
+                if (isAdversary) detectionsLoaded = false;
+                showJobs();
+            } catch (err) { alert(`Error: ${err.message}`); }
         });
-    });
-
-    document.getElementById('genStopBtn').addEventListener('click', async () => {
-        await fetch('/replay/stop', { method: 'POST' }); // Reuses same stop endpoint
     });
 
     const campaignBtn = document.getElementById('campaignBtn');
@@ -876,38 +794,83 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await resp.json();
             if (data.error) { alert(data.error); return; }
-            detectionsLoaded = false;  // force a refresh next time Detections opens
-            genStatus.classList.remove('hidden');
-            startGenSSE();
+            detectionsLoaded = false;
+            showJobs();
         } catch (err) { alert(`Error: ${err.message}`); }
     });
 
-    function startGenSSE() {
-        if (statusEventSource) statusEventSource.close();
-        statusEventSource = new EventSource('/replay/status');
+    // ═══════════════════════════════════════════════════════════════════
+    // JOBS PANEL (concurrent task status)
+    // ═══════════════════════════════════════════════════════════════════
 
-        statusEventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
+    const jobsSection = document.getElementById('jobsSection');
+    const jobsList = document.getElementById('jobsList');
+    let jobsPollTimer = null;
 
-            genMessage.textContent = data.message;
-            genPps.textContent = `${data.pps} pps`;
-
-            if (data.total > 0) {
-                const pct = Math.round((data.progress / data.total) * 100);
-                genProgress.style.width = `${pct}%`;
-            }
-
-            if (!data.is_running) {
-                statusEventSource.close();
-                statusEventSource = null;
-            }
-        };
-
-        statusEventSource.onerror = () => {
-            statusEventSource.close();
-            statusEventSource = null;
-        };
+    function showJobs() {
+        if (jobsSection) jobsSection.classList.remove('hidden');
+        pollJobs();
     }
+
+    async function pollJobs() {
+        try {
+            const resp = await fetch('/jobs');
+            const jobs = (await resp.json()).jobs || [];
+            renderJobs(jobs);
+            const anyRunning = jobs.some(j => j.is_running);
+            if (jobs.length && jobsSection) jobsSection.classList.remove('hidden');
+            if (anyRunning && !jobsPollTimer) jobsPollTimer = setInterval(pollJobs, 1000);
+            if (!anyRunning && jobsPollTimer) { clearInterval(jobsPollTimer); jobsPollTimer = null; }
+        } catch (err) { /* keep last render */ }
+    }
+
+    function renderJobs(jobs) {
+        if (!jobsList) return;
+        if (!jobs.length) {
+            jobsList.innerHTML = '<div class="placeholder">No jobs yet.</div>';
+            return;
+        }
+        jobsList.innerHTML = '';
+        jobs.forEach(j => {
+            const st = j.is_running ? { cls: 'act', txt: 'Running' }
+                : (j.error ? { cls: 'crit', txt: 'Error' } : { cls: 'ok', txt: 'Done' });
+            const pct = j.total > 0 ? Math.round((j.progress / j.total) * 100) : (j.is_running ? 100 : 0);
+            const logs = (j.logs || []).map(l => `<div class="log-line">${escHtml(l)}</div>`).join('');
+            const el = document.createElement('div');
+            el.className = 'job-row';
+            el.innerHTML = `
+                <div class="job-head">
+                    <span class="job-label">${escHtml(j.label || j.task_type)}</span>
+                    <span class="pill ${st.cls}"><span class="d"></span>${st.txt}</span>
+                    <span class="job-pps mono">${j.is_running ? j.packets_per_second + ' pps' : ''}</span>
+                    ${j.is_running ? `<button class="btn btn-ghost btn-sm job-stop" data-id="${j.id}">Stop</button>` : ''}
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+                <div class="job-msg">${escHtml(j.message || '')}${j.error ? ' — ' + escHtml(j.error) : ''}</div>
+                ${logs ? `<details class="job-log"><summary>Log</summary><div class="log-output">${logs}</div></details>` : ''}
+            `;
+            jobsList.appendChild(el);
+        });
+    }
+
+    if (jobsList) jobsList.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.job-stop');
+        if (!btn) return;
+        await fetch(`/jobs/${btn.dataset.id}/stop`, { method: 'POST' });
+        pollJobs();
+    });
+
+    const stopAllJobsBtn = document.getElementById('stopAllJobsBtn');
+    if (stopAllJobsBtn) stopAllJobsBtn.addEventListener('click', async () => {
+        await fetch('/jobs/stop-all', { method: 'POST' });
+        pollJobs();
+    });
+
+    const clearJobsBtn = document.getElementById('clearJobsBtn');
+    if (clearJobsBtn) clearJobsBtn.addEventListener('click', async () => {
+        await fetch('/jobs/clear', { method: 'POST' });
+        pollJobs();
+    });
 
     // ═══════════════════════════════════════════════════════════════════
     // PROFILES
@@ -1610,6 +1573,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     loadProfiles();
     loadAddresses();
+    pollJobs();  // reattach to any jobs already running (e.g. after a reload)
 
     // Wire up click-to-sort on the statistics tables. Re-render from the stored
     // analysis result so sorting persists without re-fetching.

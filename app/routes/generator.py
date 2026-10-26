@@ -2,9 +2,8 @@
 NetRunner OS - Traffic Generator Routes
 """
 
-import threading
 from flask import Blueprint, request, jsonify
-from app.core.engine import active_task_status, register_run
+from app.core.engine import register_run, run_job, running_job_count, MAX_CONCURRENT_JOBS
 from app.core.generators import protocol, adversary
 from app.core import campaign
 from app.core.interfaces import validate_interface
@@ -12,12 +11,18 @@ from app.core.interfaces import validate_interface
 bp = Blueprint('generator', __name__)
 
 
+def _at_capacity():
+    if running_job_count() >= MAX_CONCURRENT_JOBS:
+        return jsonify({'error': 'Too many jobs running. Stop one and retry.'}), 400
+    return None
+
+
 @bp.route('/generate/protocol', methods=['POST'])
 def generate_protocol():
     """Generate realistic protocol traffic."""
-    if active_task_status['is_running']:
-        return jsonify({'error': 'A task is already running.'}), 400
-
+    cap = _at_capacity()
+    if cap:
+        return cap
     try:
         data = request.get_json()
         proto = data.get('protocol', 'dns')
@@ -26,15 +31,6 @@ def generate_protocol():
         ok, err = validate_interface(interface)
         if not ok:
             return jsonify({'error': err}), 400
-
-        # Reset state
-        active_task_status['is_running'] = True
-        active_task_status['task_type'] = 'generate'
-        active_task_status['progress'] = 0
-        active_task_status['total'] = 0
-        active_task_status['message'] = f'Generating {proto.upper()} traffic...'
-        active_task_status['error'] = None
-        active_task_status['logs'].clear()
 
         params = {
             'interface': interface,
@@ -50,13 +46,9 @@ def generate_protocol():
             'ipjitter': float(data.get('ipjitter', 0) or 0),
         }
 
-        thread = threading.Thread(
-            target=protocol.generate,
-            args=(params,),
-            daemon=True
-        )
-        thread.start()
-        return jsonify({'status': f'{proto.upper()} generation started.'})
+        jid = run_job('generate', protocol.generate, (params,),
+                      label=f'{proto.upper()} traffic')
+        return jsonify({'status': f'{proto.upper()} generation started.', 'job_id': jid})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -65,9 +57,9 @@ def generate_protocol():
 @bp.route('/generate/adversary', methods=['POST'])
 def generate_adversary():
     """Generate adversary simulation traffic."""
-    if active_task_status['is_running']:
-        return jsonify({'error': 'A task is already running.'}), 400
-
+    cap = _at_capacity()
+    if cap:
+        return cap
     try:
         data = request.get_json()
         sim_type = data.get('simulation', 'c2_beacon')
@@ -76,15 +68,6 @@ def generate_adversary():
         ok, err = validate_interface(interface)
         if not ok:
             return jsonify({'error': err}), 400
-
-        # Reset state
-        active_task_status['is_running'] = True
-        active_task_status['task_type'] = 'generate'
-        active_task_status['progress'] = 0
-        active_task_status['total'] = 0
-        active_task_status['message'] = f'Running {sim_type} simulation...'
-        active_task_status['error'] = None
-        active_task_status['logs'].clear()
 
         params = {
             'interface': interface,
@@ -113,13 +96,8 @@ def generate_adversary():
             'interface': interface,
         })
 
-        thread = threading.Thread(
-            target=adversary.generate,
-            args=(params,),
-            daemon=True
-        )
-        thread.start()
-        return jsonify({'status': f'{sim_type} simulation started.'})
+        jid = run_job('generate', adversary.generate, (params,), label=sim_type)
+        return jsonify({'status': f'{sim_type} simulation started.', 'job_id': jid})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -128,9 +106,9 @@ def generate_adversary():
 @bp.route('/generate/campaign', methods=['POST'])
 def generate_campaign():
     """Run the full adversary suite (or a subset) sequentially."""
-    if active_task_status['is_running']:
-        return jsonify({'error': 'A task is already running.'}), 400
-
+    cap = _at_capacity()
+    if cap:
+        return cap
     try:
         data = request.get_json() or {}
         ok, err = validate_interface(data.get('interface', 'eth0'))
@@ -151,23 +129,10 @@ def generate_campaign():
         scenarios = data.get('scenarios')
         planned = len(campaign.campaign_plan(settings, scenarios))
 
-        # Reset state
-        active_task_status['is_running'] = True
-        active_task_status['task_type'] = 'generate'
-        active_task_status['progress'] = 0
-        active_task_status['total'] = 0
-        active_task_status['loop_count'] = 0
-        active_task_status['message'] = f'Starting adversary campaign ({planned} scenarios)...'
-        active_task_status['error'] = None
-        active_task_status['logs'].clear()
-
-        thread = threading.Thread(
-            target=campaign.run_campaign,
-            args=(settings, scenarios),
-            daemon=True
-        )
-        thread.start()
-        return jsonify({'status': 'Adversary campaign started.', 'scenarios': planned})
+        jid = run_job('generate', campaign.run_campaign, (settings, scenarios),
+                      label=f'Adversary suite ({planned})')
+        return jsonify({'status': 'Adversary campaign started.',
+                        'scenarios': planned, 'job_id': jid})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
