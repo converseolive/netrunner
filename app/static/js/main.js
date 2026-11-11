@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const crumb = document.getElementById('crumb');
         if (crumb && crumbLabels[tabId]) crumb.textContent = crumbLabels[tabId];
         if (tabId === 'settings') loadSettings();
-        if (tabId === 'library') loadLibrary();
+        if (tabId === 'library') { loadLibrary(); loadCatalog(); }
         if ((tabId === 'detections' || tabId === 'coverage') && !detectionsLoaded) {
             detectionsLoaded = true;
             loadDetections();
@@ -1577,7 +1577,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await fetch('/captures');
             const caps = (await resp.json()).captures || [];
             if (!caps.length) {
-                libBody.innerHTML = '<tr><td colspan="5" class="placeholder">No saved captures yet. Add some, or analyze one on the Viewer tab.</td></tr>';
+                libBody.innerHTML = '<tr><td colspan="5" class="placeholder">No saved captures yet. Add some, analyze one on the Viewer tab, or grab one from Recommended Captures below.</td></tr>';
                 return;
             }
             libBody.innerHTML = caps.map(c => `
@@ -1590,6 +1590,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>`).join('');
             document.getElementById('libAll').checked = false;
         } catch (err) { console.error('Failed to load library:', err); }
+    }
+
+    let catalogLoaded = false;
+    async function loadCatalog() {
+        if (catalogLoaded) return;
+        try {
+            const data = await (await fetch('/captures/catalog')).json();
+            const cov = document.getElementById('catalogCoverage');
+            cov.innerHTML = (data.coverage || []).map(c =>
+                `<span class="cat-chip ${c.covered ? 'on' : ''}" title="${c.covered ? c.captures.length + ' capture(s)' : 'No clean public capture — use the generator'}">${escHtml(c.name)}</span>`
+            ).join('');
+            const list = document.getElementById('catalogList');
+            list.innerHTML = (data.captures || []).map(e => {
+                const chips = e.scenario_names.map(n => `<span class="tag">${escHtml(n)}</span>`).join(' ')
+                    + (e.category === 'background' ? ' <span class="tag">Background traffic</span>' : '')
+                    + (!e.scenario_names.length && e.category !== 'background' ? ' <span class="tag">Extra detection</span>' : '');
+                const techs = (e.techniques || []).map(t => `<span class="mitre-tag">${escHtml(t)}</span>`).join(' ');
+                return `<div class="catalog-item">
+                    <div class="catalog-head">
+                        <a class="catalog-title" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">${escHtml(e.title)}</a>
+                        <span class="plan-dim">${escHtml(e.source_info.name)} &middot; ${escHtml(e.size)} &middot; ${escHtml(e.format)}</span>
+                    </div>
+                    <div class="catalog-tags">${chips} ${techs}</div>
+                    <div class="catalog-summary">${escHtml(e.summary)}</div>
+                    ${e.notes ? `<div class="catalog-notes">${escHtml(e.notes)}</div>` : ''}
+                    <div class="catalog-notes">${escHtml(e.source_info.password)}</div>
+                    <div class="catalog-actions">
+                        <a class="btn btn-sm" href="${escHtml(e.file_url)}" target="_blank" rel="noopener">↓ Download</a>
+                        <a class="btn btn-ghost btn-sm" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">Source page</a>
+                    </div>
+                </div>`;
+            }).join('');
+            catalogLoaded = true;
+        } catch (err) { console.error('Failed to load catalog:', err); }
     }
 
     function selectedCaptures() {

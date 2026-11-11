@@ -6,7 +6,7 @@ import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 
-from app.core import playlist
+from app.core import playlist, capture_catalog
 from app.core.rewrite_planner import suggest_lab_subnet
 from app.core.settings import get_settings
 from app.core.interfaces import validate_interface
@@ -26,6 +26,13 @@ def _folder():
 @bp.route('/captures', methods=['GET'])
 def list_captures():
     return jsonify({'captures': playlist.list_captures(_folder())})
+
+
+@bp.route('/captures/catalog', methods=['GET'])
+def recommended_captures():
+    return jsonify({'captures': capture_catalog.catalog(),
+                    'coverage': capture_catalog.coverage(),
+                    'sources': capture_catalog.SOURCES})
 
 
 @bp.route('/captures', methods=['POST'])

@@ -390,6 +390,22 @@ select.form-input { font-family: var(--sans); }
 .playlist-maps { font-size: 12.5px; color: var(--text-dim); line-height: 1.8; }
 .playlist-maps code { font-family: var(--mono); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
 
+/* ── Recommended captures ──────────────────────────────────────────────────── */
+.catalog-coverage { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.cat-chip { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-faint); border: 1px solid var(--line); }
+.cat-chip.on { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
+.catalog-list { display: flex; flex-direction: column; }
+.catalog-item { padding: 14px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.catalog-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.catalog-title { font-weight: 650; font-size: 13.5px; color: var(--text); text-decoration: none; }
+.catalog-title:hover { color: var(--accent-ink); text-decoration: underline; }
+.catalog-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); }
+.catalog-summary { font-size: 12.5px; color: var(--text); max-width: 80ch; }
+.catalog-notes { font-size: 12px; color: var(--text-dim); max-width: 80ch; }
+.catalog-actions { display: flex; gap: 8px; margin-top: 2px; }
+.catalog-actions .btn { text-decoration: none; }
+
 /* ── Jobs panel ────────────────────────────────────────────────────────────── */
 .jobs-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .job-row { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg); }
