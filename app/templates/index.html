@@ -27,6 +27,10 @@
                     <span class="nav-icon">◉</span>
                     <span class="nav-label">Viewer</span>
                 </button>
+                <button class="nav-item" data-tab="library" id="tab-library">
+                    <span class="nav-icon">🗂</span>
+                    <span class="nav-label">Library</span>
+                </button>
                 <button class="nav-item" data-tab="rewriter" id="tab-rewriter">
                     <span class="nav-icon">⇄</span>
                     <span class="nav-label">Rewrite</span>
@@ -179,6 +183,73 @@
                             <div class="placeholder">No analysis run yet.</div>
                         </div>
                     </div>
+                </div>
+
+                <!-- ═══════════════ CAPTURE LIBRARY + PLAY ALL ═══════════════ -->
+                <div id="pane-library" class="tab-pane">
+                    <section class="section">
+                        <div class="cov-head">
+                            <div>
+                                <div class="eyebrow">Saved captures</div>
+                                <h2 class="section-header" style="margin-top:3px;">Capture Library</h2>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <label class="btn btn-sm" for="libUpload">+ Add captures</label>
+                                <input type="file" id="libUpload" multiple accept=".pcap,.pcapng,.cap,.gz" class="hidden">
+                                <button id="libRefresh" class="btn btn-ghost btn-sm">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="panel" style="padding:0; overflow-x:auto;">
+                            <table class="data-table" style="min-width:560px;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:36px;"><input type="checkbox" id="libAll" title="Select all"></th>
+                                        <th>Capture</th><th>Size</th><th>Added</th><th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="libBody"></tbody>
+                            </table>
+                        </div>
+                        <p class="status-text" style="margin-top:8px;">Captures you analyze on the Viewer tab are saved here too.</p>
+                    </section>
+
+                    <section class="section">
+                        <h2 class="section-header">Play All</h2>
+                        <div class="panel">
+                            <div class="form-grid cols-4">
+                                <div class="form-group">
+                                    <label class="form-label">Lab subnet</label>
+                                    <input type="text" id="playLab" class="form-input" placeholder="blank = from internal networks">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Interface</label>
+                                    <input type="text" id="playIface" class="form-input" list="ifaceOptions" placeholder="sensor-visible interface">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Speed</label>
+                                    <select id="playSpeed" class="form-input">
+                                        <option value="original">Original timing</option>
+                                        <option value="fast">As fast as possible</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Gap between captures (s)</label>
+                                    <input type="number" id="playGap" class="form-input" value="10" min="0" step="1">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Max seconds per capture</label>
+                                    <input type="number" id="playMax" class="form-input" min="0" step="10" placeholder="no cap">
+                                </div>
+                            </div>
+                            <div class="form-row" style="margin-top: 1rem;">
+                                <button id="playPreviewBtn" class="btn btn-sm">Preview plan</button>
+                                <button id="playAllBtn" class="btn btn-accent">▶ Play all selected</button>
+                                <span id="playStatus" class="status-text"></span>
+                            </div>
+                            <p class="status-text" style="margin-top:8px;">Each capture gets its own block of the lab range so captures never share lab hosts, and is recorded as its own run for the Detections tab.</p>
+                            <div id="playPlan" class="plan-result hidden"></div>
+                        </div>
+                    </section>
                 </div>
 
                 <!-- ═══════════════ TAB 2: REWRITE & REPLAY ═══════════════ -->

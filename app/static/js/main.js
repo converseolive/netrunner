@@ -37,7 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const panes = document.querySelectorAll('.tab-pane');
 
     const crumbLabels = {
-        viewer: 'PCAP Viewer', rewriter: 'Rewrite & Replay', generator: 'Traffic Generator',
+        viewer: 'PCAP Viewer', library: 'Capture Library', rewriter: 'Rewrite & Replay',
+        generator: 'Traffic Generator',
         detections: 'Detection Results', coverage: 'Coverage Matrix',
         addressbook: 'Address Book', profiles: 'Profiles', settings: 'Settings'
     };
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const crumb = document.getElementById('crumb');
         if (crumb && crumbLabels[tabId]) crumb.textContent = crumbLabels[tabId];
         if (tabId === 'settings') loadSettings();
+        if (tabId === 'library') loadLibrary();
         if ((tabId === 'detections' || tabId === 'coverage') && !detectionsLoaded) {
             detectionsLoaded = true;
             loadDetections();
@@ -830,6 +832,17 @@ document.addEventListener('DOMContentLoaded', () => {
             jobsList.innerHTML = '<div class="placeholder">No jobs yet.</div>';
             return;
         }
+        // The list is rebuilt every poll; remember which logs were expanded (and
+        // where they were scrolled) so a running job doesn't snap its log shut.
+        const logState = {};
+        jobsList.querySelectorAll('.job-log').forEach(d => {
+            const out = d.querySelector('.log-output');
+            logState[d.dataset.id] = {
+                open: d.open,
+                top: out.scrollTop,
+                atBottom: out.scrollTop + out.clientHeight >= out.scrollHeight - 4,
+            };
+        });
         jobsList.innerHTML = '';
         jobs.forEach(j => {
             const st = j.is_running ? { cls: 'act', txt: 'Running' }
@@ -847,9 +860,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
                 <div class="job-msg">${escHtml(j.message || '')}${j.error ? ' — ' + escHtml(j.error) : ''}</div>
-                ${logs ? `<details class="job-log"><summary>Log</summary><div class="log-output">${logs}</div></details>` : ''}
+                ${logs ? `<details class="job-log" data-id="${j.id}"><summary>Log</summary><div class="log-output">${logs}</div></details>` : ''}
             `;
             jobsList.appendChild(el);
+            const prev = logState[j.id];
+            const det = el.querySelector('.job-log');
+            if (prev && det) {
+                det.open = prev.open;
+                const out = det.querySelector('.log-output');
+                out.scrollTop = prev.atBottom ? out.scrollHeight : prev.top;
+            }
         });
     }
 
@@ -1548,6 +1568,127 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { alert(`Error: ${err.message}`); }
     });
 
+    // ───────── Capture library + Play all ─────────
+    const libBody = document.getElementById('libBody');
+
+    async function loadLibrary() {
+        if (!libBody) return;
+        try {
+            const resp = await fetch('/captures');
+            const caps = (await resp.json()).captures || [];
+            if (!caps.length) {
+                libBody.innerHTML = '<tr><td colspan="5" class="placeholder">No saved captures yet. Add some, or analyze one on the Viewer tab.</td></tr>';
+                return;
+            }
+            libBody.innerHTML = caps.map(c => `
+                <tr>
+                    <td><input type="checkbox" class="lib-pick" value="${escHtml(c.name)}"></td>
+                    <td class="mono" style="font-size:12.5px;">${escHtml(c.name)}</td>
+                    <td>${formatBytes(c.size)}</td>
+                    <td style="color:var(--text-dim);">${new Date(c.modified * 1000).toLocaleString()}</td>
+                    <td style="text-align:right;"><button class="btn btn-ghost btn-sm lib-del" data-name="${escHtml(c.name)}">Delete</button></td>
+                </tr>`).join('');
+            document.getElementById('libAll').checked = false;
+        } catch (err) { console.error('Failed to load library:', err); }
+    }
+
+    function selectedCaptures() {
+        return Array.from(document.querySelectorAll('.lib-pick:checked')).map(cb => cb.value);
+    }
+
+    if (libBody) libBody.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.lib-del');
+        if (!btn) return;
+        if (!confirm(`Delete ${btn.dataset.name} from the library?`)) return;
+        await fetch(`/captures/${encodeURIComponent(btn.dataset.name)}`, { method: 'DELETE' });
+        loadLibrary();
+    });
+
+    const libAll = document.getElementById('libAll');
+    if (libAll) libAll.addEventListener('change', () => {
+        document.querySelectorAll('.lib-pick').forEach(cb => { cb.checked = libAll.checked; });
+    });
+
+    const libRefresh = document.getElementById('libRefresh');
+    if (libRefresh) libRefresh.addEventListener('click', loadLibrary);
+
+    const libUpload = document.getElementById('libUpload');
+    if (libUpload) libUpload.addEventListener('change', async () => {
+        if (!libUpload.files.length) return;
+        const fd = new FormData();
+        Array.from(libUpload.files).forEach(f => fd.append('files', f));
+        const status = document.getElementById('playStatus');
+        status.textContent = 'Uploading…';
+        try {
+            const resp = await fetch('/captures', { method: 'POST', body: fd });
+            const data = await resp.json();
+            status.textContent = data.error ? `✗ ${data.error}`
+                : `✓ Added ${data.saved.length}${data.skipped.length ? `, skipped ${data.skipped.length} non-capture file(s)` : ''}`;
+        } catch (err) { status.textContent = `✗ ${err.message}`; }
+        libUpload.value = '';
+        loadLibrary();
+    });
+
+    function playlistBody() {
+        return {
+            captures: selectedCaptures(),
+            lab_subnet: document.getElementById('playLab').value.trim(),
+            interface: document.getElementById('playIface').value.trim(),
+            speed: document.getElementById('playSpeed').value,
+            gap_seconds: document.getElementById('playGap').value,
+            max_seconds: document.getElementById('playMax').value,
+        };
+    }
+
+    function renderPlaylistPlan(d) {
+        const el = document.getElementById('playPlan');
+        const rows = (d.plans || []).map(p => {
+            const maps = (p.subnet_map || []).map(m =>
+                `<code>${escHtml(m.from)}</code> &rarr; <code>${escHtml(m.to)}</code> <span class="plan-dim">(${m.host_count} host${m.host_count === 1 ? '' : 's'})</span>`
+            ).join('<br>') || '<span class="plan-dim">No internal hosts &mdash; replayed as-is</span>';
+            const warns = (p.warnings || []).map(w => `<div class="plan-warn">${escHtml(w)}</div>`).join('');
+            return `<div class="playlist-item">
+                <div class="playlist-name">${escHtml(p.name)} <span class="plan-dim">&middot; ${p.host_count} host${p.host_count === 1 ? '' : 's'}</span></div>
+                <div class="playlist-maps">${maps}</div>${warns}</div>`;
+        }).join('');
+        el.innerHTML = `<h4 class="plan-title">Lab range ${escHtml(d.lab_subnet)} &middot; ${(d.plans || []).length} capture(s), played in this order</h4>${rows}`;
+        el.classList.remove('hidden');
+    }
+
+    const playPreviewBtn = document.getElementById('playPreviewBtn');
+    if (playPreviewBtn) playPreviewBtn.addEventListener('click', async () => {
+        const status = document.getElementById('playStatus');
+        status.textContent = 'Planning…';
+        try {
+            const resp = await fetch('/playlist/preview', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(playlistBody())
+            });
+            const data = await resp.json();
+            if (data.error) { status.textContent = `✗ ${data.error}`; return; }
+            status.textContent = '';
+            renderPlaylistPlan(data);
+        } catch (err) { status.textContent = `✗ ${err.message}`; }
+    });
+
+    const playAllBtn = document.getElementById('playAllBtn');
+    if (playAllBtn) playAllBtn.addEventListener('click', async () => {
+        const status = document.getElementById('playStatus');
+        status.textContent = 'Starting…';
+        try {
+            const resp = await fetch('/playlist/play', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(playlistBody())
+            });
+            const data = await resp.json();
+            if (data.error) { status.textContent = `✗ ${data.error}`; return; }
+            status.textContent = `✓ Playing ${data.plans.length} capture(s) — progress in Active Jobs below.`;
+            renderPlaylistPlan(data);
+            detectionsLoaded = false;
+            showJobs();
+        } catch (err) { status.textContent = `✗ ${err.message}`; }
+    });
+
     // ───────── Interfaces ─────────
     async function loadInterfaces() {
         try {
@@ -1561,7 +1702,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (names.length) {
                 const nic = names.find(n => /^(eth|en|ens|eno|enp)/.test(n))
                     || names.find(n => !/^lo/.test(n)) || names[0];
-                ['genInterface', 'replayInterface'].forEach(id => {
+                ['genInterface', 'replayInterface', 'playIface'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el && !names.includes(el.value)) el.value = nic;
                 });

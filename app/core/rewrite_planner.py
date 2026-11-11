@@ -173,7 +173,7 @@ def _ip_sort_key(ip):
 # ── Plan generation ───────────────────────────────────────────────────────────
 
 def suggest_plan(addressing, lab_subnet, rewrite_macs=False,
-                 lab_gateway_mac=None, internal_networks=None):
+                 lab_gateway_mac=None, internal_networks=None, block_offset=0):
     """
     Produce a rewrite plan mapping the capture's internal /24s into `lab_subnet`.
 
@@ -211,8 +211,9 @@ def suggest_plan(addressing, lab_subnet, rewrite_macs=False,
 
     ip_map = {}
     subnet_map = []
-    for idx, sub in enumerate(addressing.get("subnets", [])):
+    for idx, sub in enumerate(addressing.get("subnets", []), start=int(block_offset)):
         # Each internal /24 gets the next /24-aligned block inside the lab range.
+        # block_offset skips blocks already used by earlier captures in a playlist.
         lab_block_int = base_int + (idx * 256)
         lab_prefix = ".".join(str(o) for o in _int_to_octets(lab_block_int)[:3])
 

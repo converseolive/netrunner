@@ -383,6 +383,13 @@ select.form-input { font-family: var(--sans); }
 ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 999px; border: 2px solid var(--surface); }
 ::-webkit-scrollbar-track { background: transparent; }
 
+/* ── Play all plan ─────────────────────────────────────────────────────────── */
+.playlist-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.playlist-item:last-child { border-bottom: 0; }
+.playlist-name { font-weight: 650; font-size: 13px; font-family: var(--mono); margin-bottom: 4px; }
+.playlist-maps { font-size: 12.5px; color: var(--text-dim); line-height: 1.8; }
+.playlist-maps code { font-family: var(--mono); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+
 /* ── Jobs panel ────────────────────────────────────────────────────────────── */
 .jobs-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .job-row { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg); }

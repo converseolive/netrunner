@@ -10,6 +10,7 @@ It runs as a self-contained Flask app with a browser console. Packet work is don
 - **Rewrite audit** — before you replay a downloaded capture, it sorts every identifier into **rewrite** (make it native), **review** (betrays origin, costly to change), or **protect** (leave it or the detection breaks), so you know exactly what to change.
 - **Rewrite planner** — maps the capture's internal subnets into your lab range while preserving host octets, leaves external/C2 addresses alone, and (when you configure your ExtraHop internal networks) picks a lab range the sensor will treat as internal and warns when a chosen range would classify as external.
 - **Replay** — stream a PCAP to an interface with on-the-fly IP/MAC/port/TTL/VLAN rewrites.
+- **Capture library & Play all** — keep a library of captures and replay a selection back to back as one job. Each capture is planned into its own block of the lab range, so captures never collapse onto the same lab hosts, and each is recorded as its own run so detections can be attributed per capture. Choose original or fast timing, a gap between captures, and an optional per-capture time cap.
 - **Traffic generator** — benign protocol sessions (DNS, HTTP, FTP, SMTP, SNMP, NTP, ICMP) and twelve adversary simulations (C2 beaconing, DNS/HTTP/ICMP exfiltration, port scan, lateral movement, DGA, Kerberoasting, DCSync, LLMNR/NBT-NS poisoning, NTLM relay, ARP spoofing), each crafted to exercise the matching detector.
   - **Sustained C2 beaconing** — run a jittered beacon campaign over a set duration, which is what trips behavioural beaconing detection, instead of a one-shot burst.
   - **Full adversary suite** — fire every scenario in sequence from one click so coverage fills in comprehensively.
@@ -68,6 +69,12 @@ The internal networks do two things: the rewrite planner keeps your lab range in
 2. Run a single scenario, a sustained beacon campaign, or the full suite.
 3. On **Detections**, click *Check ExtraHop* to see which scenarios the sensor caught, their risk and time-to-detect, and any gaps.
 4. On **Coverage**, read the MITRE matrix; download an HTML report to share.
+
+**Replay a set of captures in one go**
+
+1. On **Library**, add captures (or analyze them on Viewer, which saves them here too) and tick the ones to play.
+2. Set the lab subnet (or leave it blank to pick one from your internal networks), the interface, speed, and gap.
+3. Click *Preview plan* to see where each capture lands, then *Play all selected*. Progress shows in Active Jobs; results land on **Detections** per capture.
 
 **Replay a downloaded capture at the sensor**
 

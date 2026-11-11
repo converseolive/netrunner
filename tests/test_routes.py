@@ -202,6 +202,58 @@ class GeneratorPreflightTests(RouteTestBase):
         self.assertEqual(resp.status_code, 400)
 
 
+class LibraryAndPlaylistRoutes(RouteTestBase):
+    def _upload(self, name="sample.pcap"):
+        return self.client.post(
+            "/captures",
+            data={"files": [(io.BytesIO(_sample_pcap_bytes()), name)]},
+            content_type="multipart/form-data",
+        )
+
+    def test_upload_list_delete(self):
+        resp = self._upload()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["saved"], ["sample.pcap"])
+        names = [c["name"] for c in self.client.get("/captures").get_json()["captures"]]
+        self.assertIn("sample.pcap", names)
+        self.assertEqual(self.client.delete("/captures/sample.pcap").status_code, 200)
+        self.assertEqual(self.client.delete("/captures/sample.pcap").status_code, 404)
+
+    def test_upload_rejects_non_capture(self):
+        resp = self.client.post(
+            "/captures", data={"files": [(io.BytesIO(b"hi"), "notes.txt")]},
+            content_type="multipart/form-data")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_preview_offsets_second_capture(self):
+        self._upload("one.pcap")
+        self._upload("two.pcap")
+        data = self.client.post("/playlist/preview", json={
+            "captures": ["one.pcap", "two.pcap"], "lab_subnet": "10.160.0.0/16"}).get_json()
+        self.assertEqual(data["lab_subnet"], "10.160.0.0/16")
+        self.assertEqual(data["plans"][0]["subnet_map"][0]["to"], "10.160.0.0/24")
+        self.assertEqual(data["plans"][1]["subnet_map"][0]["to"], "10.160.1.0/24")
+        self.assertNotIn("path", data["plans"][0])  # server paths not exposed
+
+    def test_preview_needs_captures_and_subnet(self):
+        self.assertEqual(self.client.post("/playlist/preview", json={}).status_code, 400)
+        self._upload()
+        resp = self.client.post("/playlist/preview", json={"captures": ["sample.pcap"]})
+        self.assertEqual(resp.status_code, 400)  # no lab subnet, no internal networks
+
+    def test_preview_unknown_capture_is_400(self):
+        resp = self.client.post("/playlist/preview", json={
+            "captures": ["../etc/passwd"], "lab_subnet": "10.160.0.0/16"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_play_rejects_bad_interface(self):
+        self._upload()
+        resp = self.client.post("/playlist/play", json={
+            "captures": ["sample.pcap"], "lab_subnet": "10.160.0.0/16",
+            "interface": "nope-xyz0"})
+        self.assertEqual(resp.status_code, 400)
+
+
 class AddressAndProfileRoutes(RouteTestBase):
     def test_address_crud(self):
         created = self.client.post("/addresses", json={
