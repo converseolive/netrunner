@@ -780,6 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 src_mac: srcIpEl.dataset.mac || null,
                 dst_mac: dstIpEl.dataset.mac || null,
                 ipjitter: document.getElementById('genJitter').value,
+                intensity: (document.getElementById('genIntensity') || {}).value || 'standard',
             };
             card.querySelectorAll('[data-field]').forEach(inp => {
                 payload[inp.dataset.field] = inp.value;
@@ -812,6 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
             src_mac: srcIpEl.dataset.mac || null,
             dst_mac: dstIpEl.dataset.mac || null,
             ipjitter: document.getElementById('genJitter').value,
+            intensity: (document.getElementById('genIntensity') || {}).value || 'standard',
         };
         try {
             const resp = await fetch('/generate/campaign', {

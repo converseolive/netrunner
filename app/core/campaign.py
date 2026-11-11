@@ -13,6 +13,7 @@ route spawns on a background thread.
 
 from app.core.engine import active_task_status, register_run, log_message
 from app.core.generators import adversary
+from app.core.generators.adversary import INTENSITY
 from app.core.detection_match import SCENARIOS, scenario_meta
 
 # Canonical run order: recon -> C2 -> exfil -> lateral -> credential, roughly
@@ -32,7 +33,8 @@ def campaign_plan(settings, scenarios=None):
     for key in CAMPAIGN_ORDER:
         if key not in wanted:
             continue
-        plan.append({
+        intensity = settings.get('intensity', 'standard')
+        params = {
             'interface': settings.get('interface', 'eth0'),
             'simulation': key,
             'src_ip': settings.get('src_ip', '10.0.0.100'),
@@ -44,7 +46,16 @@ def campaign_plan(settings, scenarios=None):
             'delay': float(settings.get('delay', 0.1)),
             'domain': settings.get('domain', 'evil-c2.xyz'),
             'ipjitter': float(settings.get('ipjitter', 0) or 0),
-        })
+            'intensity': intensity,
+        }
+        # A behavioural beaconing detection needs a sustained run, not a burst.
+        # At detection intensity, give C2 beaconing a real duration unless the
+        # caller set one, so the suite can trip it in one click.
+        if key == 'c2_beacon':
+            dm = float(settings.get('duration_min', 0) or 0)
+            params['duration_min'] = dm or INTENSITY.get(
+                intensity, INTENSITY['standard'])['beacon_min']
+        plan.append(params)
     return plan
 
 

