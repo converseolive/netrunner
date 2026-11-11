@@ -405,6 +405,11 @@ select.form-input { font-family: var(--sans); }
 .catalog-notes { font-size: 12px; color: var(--text-dim); max-width: 80ch; }
 .catalog-actions { display: flex; gap: 8px; margin-top: 2px; }
 .catalog-actions .btn { text-decoration: none; }
+.catalog-actions { flex-wrap: wrap; align-items: center; }
+.cat-pass { width: 190px; max-width: 100%; padding: 5px 9px; font-size: 12px; }
+.catalog-status { font-size: 12px; color: var(--text-dim); }
+.catalog-status.ok { color: var(--ok); }
+.catalog-status.err { color: var(--crit); }
 
 /* ── Jobs panel ────────────────────────────────────────────────────────────── */
 .jobs-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }

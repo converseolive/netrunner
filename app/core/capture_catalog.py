@@ -235,6 +235,7 @@ def catalog():
         e.setdefault("category", "technique")
         e["source_info"] = SOURCES[e["source"]]
         e["scenario_names"] = [SCENARIOS[s][0] for s in e["scenarios"] if s in SCENARIOS]
+        e["fetchable"] = e.get("format") != "pcap set"
         out.append(e)
     return out
 

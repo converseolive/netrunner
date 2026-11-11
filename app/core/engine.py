@@ -123,18 +123,24 @@ def stop_all_jobs():
             st['is_running'] = False
 
 
-def list_jobs(limit=30):
-    with _jobs_lock:
-        jobs = sorted(_jobs.values(), key=lambda s: s.get('started_at') or 0,
-                      reverse=True)[:limit]
-    return [{
+def public_job(s):
+    """JSON-safe view of a job's status."""
+    return {
         'id': s['id'], 'task_type': s['task_type'], 'label': s['label'],
         'is_running': s['is_running'], 'progress': s['progress'], 'total': s['total'],
         'packets_per_second': s['packets_per_second'], 'message': s['message'],
         'loop_count': s['loop_count'], 'error': s['error'],
         'started_at': s['started_at'], 'ended_at': s['ended_at'],
+        'result': s.get('result'),
         'logs': list(s['logs'])[-40:],
-    } for s in jobs]
+    }
+
+
+def list_jobs(limit=30):
+    with _jobs_lock:
+        jobs = sorted(_jobs.values(), key=lambda s: s.get('started_at') or 0,
+                      reverse=True)[:limit]
+    return [public_job(s) for s in jobs]
 
 
 def clear_finished_jobs():

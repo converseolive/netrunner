@@ -6,7 +6,7 @@ import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 
-from app.core import playlist, capture_catalog
+from app.core import playlist, capture_catalog, capture_fetch
 from app.core.rewrite_planner import suggest_lab_subnet
 from app.core.settings import get_settings
 from app.core.interfaces import validate_interface
@@ -33,6 +33,24 @@ def recommended_captures():
     return jsonify({'captures': capture_catalog.catalog(),
                     'coverage': capture_catalog.coverage(),
                     'sources': capture_catalog.SOURCES})
+
+
+@bp.route('/captures/fetch', methods=['POST'])
+def fetch_capture():
+    """Download a recommended capture into the library as a background job."""
+    data = request.get_json() or {}
+    entry = capture_fetch.find_entry(data.get('id'))
+    if not entry:
+        return jsonify({'error': 'Unknown catalog entry.'}), 404
+    if not capture_fetch.fetchable(entry):
+        return jsonify({'error': 'This source is a set of files: download it from '
+                                 'the source page.'}), 400
+    if running_job_count() >= MAX_CONCURRENT_JOBS:
+        return jsonify({'error': 'Too many jobs running. Stop one and retry.'}), 400
+    password = (data.get('password') or '').strip() or None
+    jid = run_job('fetch', capture_fetch.run_fetch, (entry, _folder(), password),
+                  label=f"Fetch: {entry['title']}")
+    return jsonify({'status': 'Fetching.', 'job_id': jid})
 
 
 @bp.route('/captures', methods=['POST'])

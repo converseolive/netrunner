@@ -4,7 +4,8 @@ NetRunner OS - System / host info and job control routes
 
 from flask import Blueprint, jsonify
 from app.core.interfaces import list_interfaces
-from app.core.engine import list_jobs, stop_job, stop_all_jobs, clear_finished_jobs
+from app.core.engine import (list_jobs, stop_job, stop_all_jobs, clear_finished_jobs,
+                             get_job, public_job)
 
 bp = Blueprint('system', __name__)
 
@@ -17,6 +18,14 @@ def interfaces():
 @bp.route('/jobs', methods=['GET'])
 def jobs():
     return jsonify({'jobs': list_jobs()})
+
+
+@bp.route('/jobs/<job_id>', methods=['GET'])
+def one_job(job_id):
+    st = get_job(job_id)
+    if not st:
+        return jsonify({'error': 'Job not found.'}), 404
+    return jsonify(public_job(st))
 
 
 @bp.route('/jobs/<job_id>/stop', methods=['POST'])

@@ -91,6 +91,28 @@ document.addEventListener('DOMContentLoaded', () => {
         analyzeBtn.disabled = !pcapFile.files.length;
     });
 
+    function showAnalysis(data) {
+        analysisData = data;
+        analysisStatus.classList.add('hidden');
+        viewerControls.classList.remove('hidden');
+        packetCount.textContent = `${data.total_packets} packets | ${data.hosts.length} hosts | ${data.conversations.length} conversations`;
+
+        renderPackets(data.packets);
+        renderEndpoints(data.endpoints);
+        renderConversations(data.conversations);
+        renderThreats(data.threats);
+        renderFlowDiagram(data.conversations, data.endpoints);
+        populateRewriterHosts(data.hosts);
+        renderAddressingSummary(data.addressing);
+        renderAudit(data.audit);
+
+        switchView('packets');
+
+        // Enable rewriter tab
+        document.getElementById('rewriterNoFile').classList.add('hidden');
+        document.getElementById('rewriterContent').classList.remove('hidden');
+    }
+
     analyzeBtn.addEventListener('click', async () => {
         if (!pcapFile.files.length) return;
 
@@ -110,32 +132,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 analyzeBtn.disabled = false;
                 return;
             }
-
-            analysisData = data;
-            analysisStatus.classList.add('hidden');
-            viewerControls.classList.remove('hidden');
-            packetCount.textContent = `${data.total_packets} packets | ${data.hosts.length} hosts | ${data.conversations.length} conversations`;
-
-            renderPackets(data.packets);
-            renderEndpoints(data.endpoints);
-            renderConversations(data.conversations);
-            renderThreats(data.threats);
-            renderFlowDiagram(data.conversations, data.endpoints);
-            populateRewriterHosts(data.hosts);
-            renderAddressingSummary(data.addressing);
-            renderAudit(data.audit);
-
-            switchView('packets');
-
-            // Enable rewriter tab
-            document.getElementById('rewriterNoFile').classList.add('hidden');
-            document.getElementById('rewriterContent').classList.remove('hidden');
-
+            showAnalysis(data);
         } catch (err) {
             analysisStatus.textContent = `Error: ${err.message}`;
         }
         analyzeBtn.disabled = false;
     });
+
+    // Analyze a capture that is already in the library, then show it on Viewer.
+    async function analyzeLibraryCapture(name) {
+        switchTab('viewer');
+        analysisStatus.classList.remove('hidden');
+        analysisStatus.textContent = `[ Analyzing ${name}... large captures can take a few minutes ]`;
+        try {
+            const resp = await fetch('/analyze_pcap', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ library: name }),
+            });
+            const data = await resp.json();
+            if (data.error) { analysisStatus.textContent = `Error: ${data.error}`; return false; }
+            showAnalysis(data);
+            const crumb = document.getElementById('crumb');
+            if (crumb) crumb.textContent = `PCAP Viewer — ${name}`;
+            return true;
+        } catch (err) {
+            analysisStatus.textContent = `Error: ${err.message}`;
+            return false;
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // PACKET TABLE
@@ -1586,7 +1610,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="mono" style="font-size:12.5px;">${escHtml(c.name)}</td>
                     <td>${formatBytes(c.size)}</td>
                     <td style="color:var(--text-dim);">${new Date(c.modified * 1000).toLocaleString()}</td>
-                    <td style="text-align:right;"><button class="btn btn-ghost btn-sm lib-del" data-name="${escHtml(c.name)}">Delete</button></td>
+                    <td style="text-align:right;white-space:nowrap;"><button class="btn btn-ghost btn-sm lib-analyze" data-name="${escHtml(c.name)}">Analyze</button> <button class="btn btn-ghost btn-sm lib-del" data-name="${escHtml(c.name)}">Delete</button></td>
                 </tr>`).join('');
             document.getElementById('libAll').checked = false;
         } catch (err) { console.error('Failed to load library:', err); }
@@ -1617,20 +1641,72 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${e.notes ? `<div class="catalog-notes">${escHtml(e.notes)}</div>` : ''}
                     <div class="catalog-notes">${escHtml(e.source_info.password)}</div>
                     <div class="catalog-actions">
-                        <a class="btn btn-sm" href="${escHtml(e.file_url)}" target="_blank" rel="noopener">↓ Download</a>
+                        ${e.fetchable
+                            ? `<button class="btn btn-sm cat-fetch" data-id="${escHtml(e.id)}">↓ Fetch &amp; analyze</button>
+                               ${/password/.test(e.format) ? `<input class="cat-pass" type="text" placeholder="Zip password (optional)" autocomplete="off" spellcheck="false">` : ''}`
+                            : ''}
+                        <a class="btn btn-ghost btn-sm" href="${escHtml(e.file_url)}" target="_blank" rel="noopener">${e.fetchable ? 'Direct link' : '↓ Download'}</a>
                         <a class="btn btn-ghost btn-sm" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">Source page</a>
                     </div>
+                    <div class="catalog-status hidden"></div>
                 </div>`;
             }).join('');
             catalogLoaded = true;
         } catch (err) { console.error('Failed to load catalog:', err); }
     }
 
+    // Fetch a recommended capture on the server, then analyze it on Viewer.
+    const catalogListEl = document.getElementById('catalogList');
+    if (catalogListEl) catalogListEl.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.cat-fetch');
+        if (!btn) return;
+        const item = btn.closest('.catalog-item');
+        const status = item.querySelector('.catalog-status');
+        const pass = item.querySelector('.cat-pass');
+        const say = (t, cls = '') => {
+            status.classList.remove('hidden', 'ok', 'err');
+            if (cls) status.classList.add(cls);
+            status.textContent = t;
+        };
+        btn.disabled = true;
+        say('Starting download…');
+        try {
+            const resp = await fetch('/captures/fetch', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: btn.dataset.id, password: pass ? pass.value : '' }),
+            });
+            const data = await resp.json();
+            if (data.error) { say(`✗ ${data.error}`, 'err'); btn.disabled = false; return; }
+            pollJobs();
+            let job;
+            while (true) {
+                await new Promise(r => setTimeout(r, 1000));
+                job = await (await fetch(`/jobs/${data.job_id}`)).json();
+                if (job.error && !job.is_running) break;
+                if (!job.is_running) break;
+                say(job.message || 'Downloading…');
+            }
+            btn.disabled = false;
+            if (job.error || !job.result) { say(`✗ ${job.error || 'Fetch stopped.'}`, 'err'); return; }
+            const saved = job.result.saved;
+            say(`✓ Saved to library: ${saved.join(', ')}. Analyzing…`, 'ok');
+            loadLibrary();
+            const ok = await analyzeLibraryCapture(saved[0]);
+            say(ok ? `✓ Saved to library and analyzed: ${saved.join(', ')}`
+                   : `✓ Saved to library: ${saved.join(', ')} (analysis failed, see Viewer)`, ok ? 'ok' : 'err');
+        } catch (err) {
+            say(`✗ ${err.message}`, 'err');
+            btn.disabled = false;
+        }
+    });
+
     function selectedCaptures() {
         return Array.from(document.querySelectorAll('.lib-pick:checked')).map(cb => cb.value);
     }
 
     if (libBody) libBody.addEventListener('click', async (e) => {
+        const an = e.target.closest('.lib-analyze');
+        if (an) { analyzeLibraryCapture(an.dataset.name); return; }
         const btn = e.target.closest('.lib-del');
         if (!btn) return;
         if (!confirm(`Delete ${btn.dataset.name} from the library?`)) return;

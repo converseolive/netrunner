@@ -13,6 +13,7 @@ from app.core.rewrite_planner import (
     summarize_addressing, suggest_plan, suggest_lab_subnet)
 from app.core.rewrite_audit import audit_capture
 from app.core.settings import get_settings
+from app.core.playlist import resolve_capture
 
 bp = Blueprint('pcap', __name__)
 
@@ -26,16 +27,24 @@ PACKET_VIEWER_LIMIT = 2000
 @bp.route('/analyze_pcap', methods=['POST'])
 def analyze_pcap():
     """Parse a PCAP and return packets, conversations, endpoints, and timeline."""
-    if 'pcapFile' not in request.files:
-        return jsonify({'error': 'No file part in the request.'}), 400
-
-    file = request.files['pcapFile']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected.'}), 400
+    # Either an uploaded file, or the name of a capture already in the library.
+    library_name = request.form.get('library') or (request.get_json(silent=True) or {}).get('library')
+    if library_name:
+        filepath = resolve_capture(current_app.config['UPLOAD_FOLDER'], library_name)
+        if not filepath:
+            return jsonify({'error': f'Capture not found in library: {library_name}'}), 404
+    else:
+        if 'pcapFile' not in request.files:
+            return jsonify({'error': 'No file part in the request.'}), 400
+        file = request.files['pcapFile']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected.'}), 400
+        filepath = None
 
     try:
-        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], secure_filename(file.filename))
-        file.save(filepath)
+        if filepath is None:
+            filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], secure_filename(file.filename))
+            file.save(filepath)
         # Store the filepath for later rewrite/replay
         current_app.config['LAST_PCAP'] = filepath
 
