@@ -34,6 +34,28 @@ SCENARIOS = {
     "arp_spoof":        ("ARP Spoofing",            "Credential Access", "T1557.002"),
 }
 
+# scenario key -> ExtraHop detection type keys that count as "caught". These are
+# the appliance's own type IDs (from /api/v1/detections/formats), so matching
+# doesn't depend on display names or on a detection carrying MITRE techniques.
+# A scenario with no entry falls back to technique matching.
+DETECTION_TYPES = {
+    "c2_beacon":        ["c2_web_beaconing"],
+    "port_scan":        ["tcp_syn_scan", "tcp_syn_scan_activity", "tcp_syn_scan_attempt"],
+    "lateral_movement": ["wsman_activity", "remote_powershell_command_attempt"],
+    "dns_exfil":        ["dns_tunnel", "data_exfiltration"],
+    "http_exfil":       ["data_exfiltration"],
+    "icmp_tunnel":      ["icmp_tunnel", "internal_icmp_tunnel"],
+    "kerberoast":       ["kerberoasting_activity", "ldap_kerberoasting_recon"],
+    "dcsync":           ["dcsync"],
+    "llmnr_poison":     ["llmnr_poisoning", "nbt_ns_poisoning", "llmnr_activity_individual"],
+    "ntlm_relay":       ["ntlm_relay"],
+}
+
+
+def expected_types(key):
+    return DETECTION_TYPES.get(key, [])
+
+
 # ATT&CK tactic column order for the coverage grid.
 TACTIC_ORDER = ["Discovery", "Credential Access", "Lateral Movement",
                 "Command & Control", "Exfiltration"]
@@ -89,7 +111,13 @@ def _match_run(run, detections):
     if not candidates:
         return "missed", [], None, None
 
-    if not tech:
+    want = set(expected_types(run.get("scenario", "")))
+    type_hits = [d for d in candidates if d.get("type") in want]
+    if type_hits:
+        # The exact detection type this scenario is meant to trip.
+        chosen = type_hits
+        status = "detected"
+    elif not tech:
         # No expected technique (e.g. a PCAP replay): any detection on these
         # hosts in-window counts as caught.
         chosen = candidates

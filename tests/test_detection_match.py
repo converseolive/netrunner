@@ -37,6 +37,17 @@ class ScorecardTests(unittest.TestCase):
         card = dm.build_scorecard(runs, [])
         self.assertEqual(card["rows"][0]["status"], "missed")
 
+    def test_detected_by_extrahop_type_even_if_technique_differs(self):
+        now = _now()
+        runs = [{"scenario": "port_scan", "adversary_ip": "10.0.0.5",
+                 "victim_ip": "10.0.0.9", "start_ms": now - 1000, "end_ms": now}]
+        d = _det("T9999", ["10.0.0.5", "10.0.0.9"])
+        d["type"] = "tcp_syn_scan"
+        self.assertEqual(dm.build_scorecard(runs, [d])["rows"][0]["status"], "detected")
+
+    def test_every_typed_scenario_is_a_known_scenario(self):
+        self.assertTrue(set(dm.DETECTION_TYPES) <= set(dm.SCENARIOS))
+
     def test_partial_when_technique_differs(self):
         now = _now()
         runs = [{"scenario": "icmp_tunnel", "adversary_ip": "10.0.0.5",

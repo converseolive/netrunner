@@ -109,6 +109,7 @@ def normalize_detection(raw):
 
     return {
         "id": raw.get("id"),
+        "type": raw.get("type"),
         "title": raw.get("title") or raw.get("type"),
         "risk_score": raw.get("risk_score"),
         "techniques": _ids("mitre_techniques"),
