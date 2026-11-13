@@ -257,28 +257,24 @@
                         <summary><h2 class="section-header" style="margin-top:3px;">Recommended Captures</h2><span class="collapse-hint"></span></summary>
                         <div class="panel">
                             <p class="status-text" style="margin:0 0 12px;">Public captures picked to match NetRunner's attack scenarios. <b>Fetch &amp; analyze</b> downloads one on this server, unzips it (trying the source's usual password if you leave the box blank), saves it to the library, and opens it in the Viewer. These contain real malware traffic: keep them off Windows hosts and replay them only into your isolated lab.</p>
-                            <div class="cov-legend" style="margin-bottom:10px;">
-                                <span><i class="c det"></i> Public capture available</span>
-                                <span><i class="c nr"></i> Use the generator</span>
-                            </div>
-                            <div id="catalogCoverage" class="catalog-coverage"></div>
-                            <div id="catalogList" class="catalog-list"></div>
                             <div class="feed-bar">
-                                <div>
-                                    <div class="feed-title">Newer captures</div>
-                                    <div class="catalog-notes">Checks Malware-Traffic-Analysis.net for posts that match a NetRunner scenario. Unrelated posts are hidden, and nothing downloads until you click Fetch &amp; analyze.</div>
+                                <div class="cov-legend">
+                                    <span><i class="c det"></i> Public capture available</span>
+                                    <span><i class="c nr"></i> Use the generator</span>
                                 </div>
-                                <div class="feed-controls">
+                                <div class="feed-controls" title="Lists newer Malware-Traffic-Analysis.net posts that match a scenario. Nothing downloads until you click Fetch &amp; analyze.">
                                     <select id="feedRange" class="form-input small" aria-label="How far back to look">
                                         <option value="30">Last 30 days</option>
                                         <option value="90" selected>Last 90 days</option>
                                         <option value="365">Last year</option>
                                     </select>
-                                    <button id="feedRefreshBtn" class="btn btn-sm">↻ Check for new</button>
+                                    <button id="feedRefreshBtn" class="btn btn-sm">↻ Refresh</button>
                                 </div>
                             </div>
+                            <div id="catalogCoverage" class="catalog-coverage"></div>
                             <div id="feedStatus" class="catalog-status hidden"></div>
                             <div id="feedList" class="catalog-list"></div>
+                            <div id="catalogList" class="catalog-list"></div>
                         </div>
                         </details>
                     </section>

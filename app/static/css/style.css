@@ -416,11 +416,10 @@ select.form-input { font-family: var(--sans); }
 .collapse-hint::after { content: 'Hide'; }
 .collapsible:not([open]) .collapse-hint::after { content: 'Show'; }
 .collapsible[open] > summary { margin-bottom: 12px; }
-.feed-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 4px; }
-.feed-title { font-weight: 650; font-size: 13.5px; margin-bottom: 3px; }
-.feed-controls { display: flex; gap: 8px; align-items: center; }
+.feed-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.feed-controls { display: flex; gap: 8px; align-items: center; margin-left: auto; }
 .feed-controls select { width: auto; }
-#feedStatus { margin-top: 10px; }
+#feedStatus { margin: 4px 0 6px; }
 .tag.tag-new { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
 .catalog-status { font-size: 12px; color: var(--text-dim); }
 .catalog-status.ok { color: var(--ok); }
