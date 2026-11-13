@@ -6,7 +6,7 @@ import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 
-from app.core import playlist, capture_catalog, capture_fetch
+from app.core import playlist, capture_catalog, capture_fetch, capture_feed
 from app.core.rewrite_planner import suggest_lab_subnet
 from app.core.settings import get_settings
 from app.core.interfaces import validate_interface
@@ -33,6 +33,24 @@ def recommended_captures():
     return jsonify({'captures': capture_catalog.catalog(),
                     'coverage': capture_catalog.coverage(),
                     'sources': capture_catalog.SOURCES})
+
+
+@bp.route('/captures/feed', methods=['GET'])
+def new_captures():
+    """List relevant captures posted since the chosen cut-off (listing only)."""
+    try:
+        days = int(request.args.get('days', capture_feed.DEFAULT_RANGE))
+    except ValueError:
+        days = -1
+    if days not in capture_feed.RANGES:
+        return jsonify({'error': 'Unsupported time range.'}), 400
+    known = [e['page_url'] for e in capture_catalog.CATALOG]
+    try:
+        res = capture_feed.scan(days, known_pages=known)
+    except capture_feed.FeedError as e:
+        return jsonify({'error': str(e)}), 502
+    res['captures'] = capture_catalog.catalog(res['captures'])
+    return jsonify(res)
 
 
 @bp.route('/captures/fetch', methods=['POST'])

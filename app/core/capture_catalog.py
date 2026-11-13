@@ -227,10 +227,10 @@ CATALOG = [
 ]
 
 
-def catalog():
-    """Catalog entries with their source details attached."""
+def catalog(entries=None):
+    """Catalog entries (curated by default) with their source details attached."""
     out = []
-    for entry in CATALOG:
+    for entry in (CATALOG if entries is None else entries):
         e = dict(entry)
         e.setdefault("category", "technique")
         e["source_info"] = SOURCES[e["source"]]

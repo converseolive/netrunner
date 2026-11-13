@@ -1618,6 +1618,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { console.error('Failed to load library:', err); }
     }
 
+    // Remember whether the Recommended Captures section is collapsed.
+    const catalogSection = document.getElementById('catalogSection');
+    if (catalogSection) {
+        try {
+            if (localStorage.getItem('nr.catalogOpen') === '0') catalogSection.open = false;
+        } catch (_) { /* storage unavailable: default open */ }
+        catalogSection.addEventListener('toggle', () => {
+            try { localStorage.setItem('nr.catalogOpen', catalogSection.open ? '1' : '0'); } catch (_) {}
+        });
+    }
+
     let catalogLoaded = false;
     async function loadCatalog() {
         if (catalogLoaded) return;
@@ -1628,38 +1639,66 @@ document.addEventListener('DOMContentLoaded', () => {
                 `<span class="cat-chip ${c.covered ? 'on' : ''}" title="${c.covered ? c.captures.length + ' capture(s)' : 'No clean public capture — use the generator'}">${escHtml(c.name)}</span>`
             ).join('');
             const list = document.getElementById('catalogList');
-            list.innerHTML = (data.captures || []).map(e => {
-                const chips = e.scenario_names.map(n => `<span class="tag">${escHtml(n)}</span>`).join(' ')
-                    + (e.category === 'background' ? ' <span class="tag">Background traffic</span>' : '')
-                    + (!e.scenario_names.length && e.category !== 'background' ? ' <span class="tag">Extra detection</span>' : '');
-                const techs = (e.techniques || []).map(t => `<span class="mitre-tag">${escHtml(t)}</span>`).join(' ');
-                return `<div class="catalog-item">
-                    <div class="catalog-head">
-                        <a class="catalog-title" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">${escHtml(e.title)}</a>
-                        <span class="plan-dim">${escHtml(e.source_info.name)} &middot; ${escHtml(e.size)} &middot; ${escHtml(e.format)}</span>
-                    </div>
-                    <div class="catalog-tags">${chips} ${techs}</div>
-                    <div class="catalog-summary">${escHtml(e.summary)}</div>
-                    ${e.notes ? `<div class="catalog-notes">${escHtml(e.notes)}</div>` : ''}
-                    <div class="catalog-notes">${escHtml(e.source_info.password)}</div>
-                    <div class="catalog-actions">
-                        ${e.fetchable
-                            ? `<button class="btn btn-sm cat-fetch" data-id="${escHtml(e.id)}">↓ Fetch &amp; analyze</button>
-                               ${/password/.test(e.format) ? `<input class="cat-pass" type="text" placeholder="Zip password (optional)" autocomplete="off" spellcheck="false">` : ''}`
-                            : ''}
-                        <a class="btn btn-ghost btn-sm" href="${escHtml(e.file_url)}" target="_blank" rel="noopener">${e.fetchable ? 'Direct link' : '↓ Download'}</a>
-                        <a class="btn btn-ghost btn-sm" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">Source page</a>
-                    </div>
-                    <div class="catalog-status hidden"></div>
-                </div>`;
-            }).join('');
+            list.innerHTML = (data.captures || []).map(catalogItemHtml).join('');
             catalogLoaded = true;
         } catch (err) { console.error('Failed to load catalog:', err); }
     }
 
+    function catalogItemHtml(e) {
+        const chips = (e.discovered ? '<span class="tag tag-new">New</span> ' : '')
+            + e.scenario_names.map(n => `<span class="tag">${escHtml(n)}</span>`).join(' ')
+            + (e.category === 'background' ? ' <span class="tag">Background traffic</span>' : '')
+            + (!e.scenario_names.length && e.category !== 'background' ? ' <span class="tag">Extra detection</span>' : '');
+        const techs = (e.techniques || []).map(t => `<span class="mitre-tag">${escHtml(t)}</span>`).join(' ');
+        return `<div class="catalog-item">
+            <div class="catalog-head">
+                <a class="catalog-title" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">${escHtml(e.title)}</a>
+                <span class="plan-dim">${escHtml(e.source_info.name)} &middot; ${escHtml(e.size)} &middot; ${escHtml(e.format)}</span>
+            </div>
+            <div class="catalog-tags">${chips} ${techs}</div>
+            <div class="catalog-summary">${escHtml(e.summary)}</div>
+            ${e.notes ? `<div class="catalog-notes">${escHtml(e.notes)}</div>` : ''}
+            <div class="catalog-notes">${escHtml(e.source_info.password)}</div>
+            <div class="catalog-actions">
+                ${e.fetchable
+                    ? `<button class="btn btn-sm cat-fetch" data-id="${escHtml(e.id)}">↓ Fetch &amp; analyze</button>
+                       ${/password/.test(e.format) ? `<input class="cat-pass" type="text" placeholder="Zip password (optional)" autocomplete="off" spellcheck="false">` : ''}`
+                    : ''}
+                ${e.file_url ? `<a class="btn btn-ghost btn-sm" href="${escHtml(e.file_url)}" target="_blank" rel="noopener">${e.fetchable ? 'Direct link' : '↓ Download'}</a>` : ''}
+                <a class="btn btn-ghost btn-sm" href="${escHtml(e.page_url)}" target="_blank" rel="noopener">Source page</a>
+            </div>
+            <div class="catalog-status hidden"></div>
+        </div>`;
+    }
+
+    // Check the source for newer captures that match a scenario (listing only).
+    const feedBtn = document.getElementById('feedRefreshBtn');
+    if (feedBtn) feedBtn.addEventListener('click', async () => {
+        const status = document.getElementById('feedStatus');
+        const list = document.getElementById('feedList');
+        const days = document.getElementById('feedRange').value;
+        feedBtn.disabled = true;
+        status.className = 'catalog-status';
+        status.textContent = 'Checking Malware-Traffic-Analysis.net…';
+        try {
+            const resp = await fetch(`/captures/feed?days=${encodeURIComponent(days)}`);
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            const n = data.captures.length;
+            list.innerHTML = data.captures.map(catalogItemHtml).join('');
+            status.className = 'catalog-status ok';
+            status.textContent = `${n} relevant capture${n === 1 ? '' : 's'} since ${data.since}`
+                + (data.skipped ? `, ${data.skipped} unrelated post${data.skipped === 1 ? '' : 's'} hidden.` : '.');
+        } catch (err) {
+            status.className = 'catalog-status err';
+            status.textContent = `✗ ${err.message}`;
+        } finally {
+            feedBtn.disabled = false;
+        }
+    });
+
     // Fetch a recommended capture on the server, then analyze it on Viewer.
-    const catalogListEl = document.getElementById('catalogList');
-    if (catalogListEl) catalogListEl.addEventListener('click', async (e) => {
+    if (catalogSection) catalogSection.addEventListener('click', async (e) => {
         const btn = e.target.closest('.cat-fetch');
         if (!btn) return;
         const item = btn.closest('.catalog-item');

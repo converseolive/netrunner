@@ -20,7 +20,7 @@ import zipfile
 
 from werkzeug.utils import secure_filename
 
-from app.core import capture_catalog
+from app.core import capture_catalog, capture_feed
 from app.core.engine import active_task_status, log_message
 from app.core.playlist import is_capture_name
 
@@ -48,10 +48,11 @@ def fetchable(entry):
 
 
 def find_entry(entry_id):
+    """A curated entry, or one a feed refresh listed this session."""
     for e in capture_catalog.CATALOG:
         if e['id'] == entry_id:
             return e
-    return None
+    return capture_feed.discovered(entry_id) if entry_id else None
 
 
 def candidate_passwords(entry, password=None):
@@ -189,7 +190,14 @@ def fetch_into_library(entry, folder, password=None, opener=None):
     if not fetchable(entry):
         raise FetchError('This source is a set of files: download it from the source page.')
     os.makedirs(folder, exist_ok=True)
-    url = entry['file_url']
+    url = entry.get('file_url')
+    if not url:
+        # A feed entry: read its post to find the capture link.
+        active_task_status['message'] = 'Finding the capture on the source page…'
+        try:
+            url = capture_feed.resolve_file_url(entry, opener=opener)
+        except capture_feed.FeedError as e:
+            raise FetchError(str(e)) from None
     log_message(f'[*] Fetching {url}')
     tmpdir = tempfile.mkdtemp(prefix='.fetch-', dir=folder)
     try:
